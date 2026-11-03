@@ -175,7 +175,8 @@ off-screen map data too badly.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
 - Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size
-  signature, then assign ground/world/UI roles, heights, and materials.
+  signature, then assign ground/world/UI roles, heights, materials, and camera
+  distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
 - Deterministic CLI and 27 tests.
@@ -237,8 +238,9 @@ id. `dump.py` loads it, `inspect.py` writes per-layer PNGs, and
 Scene signatures (`mode`, enabled mask, priorities, affine mask, screen sizes)
 and the TOML profile loader are implemented. `--profile` maps BG layers to
 ground/world/UI roles, heights, and materials. The stock 2D composite handles
-menus, battles, and affine/raster scenes. Remaining: automatic profile
-discovery, a debug overlay, and profile-driven camera settings.
+menus, battles, and affine/raster scenes. Profiles can also override camera
+distance, pitch, and yaw. Remaining: automatic profile discovery and a debug
+overlay.
 
 **M3 — world atlas and parallax depth**
 Stitch BG layers into a persistent world atlas as the camera scrolls. Estimate

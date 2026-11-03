@@ -99,9 +99,11 @@ An exact ROM-hash override is still a future extension. The current mGBA dump
 hook does not write `mGameInfo`; `--profile` therefore usually selects by
 signature.
 
-Profiles should be hot-reloadable while the emulator runs. A debug overlay
-should let the user cycle layer roles and heights live; that is faster than
-guessing from screenshots.
+`SceneProfile.camera` supports `pitch_deg`, `yaw_deg`, and `distance`; the
+offline `dump_camera()` uses them when present. Profiles should be
+hot-reloadable while the emulator runs. A debug overlay should let the user
+cycle layer roles and heights live; that is faster than guessing from
+screenshots.
 
 ## 5. Reconstructing geometry
 

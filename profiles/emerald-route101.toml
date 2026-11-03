@@ -40,3 +40,9 @@ role = "ignore"
 bg = 0
 role = "ui"
 flat = true
+
+# Optional camera override. The default is a ~25.6 degree pitch and a distance
+# of 1.15x the longer world axis.
+[profiles.camera]
+pitch_deg = 25.6
+distance = 588.8

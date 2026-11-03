@@ -155,7 +155,8 @@ Implementation notes:
 
 - Offline profile loader is implemented in `gba_diorama/profiles.py`; TOML
   profiles match mode/enabled/priorities/affine/screen sizes and optional game
-  code, then assign ground/world/UI roles, heights, and materials.
+  code, then assign ground/world/UI roles, heights, materials, and camera
+  distance/pitch/yaw.
 - Still to do: auto-load a profile directory, hot-reload TOML, add a debug
   overlay (signature, roles, heights, confidence, fallback reason), and add
   hotkeys to cycle roles/heights and toggle 2D fallback.

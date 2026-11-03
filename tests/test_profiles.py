@@ -3,7 +3,9 @@ from pathlib import Path
 import numpy as np
 
 from gba_diorama.dump import DumpWorld, export_synthetic_dump, load_dump
+from gba_diorama.pipeline import dump_camera
 from gba_diorama.profiles import (
+    CameraProfile,
     LayerProfile,
     ProfileBook,
     ProfileMatch,
@@ -152,3 +154,18 @@ def test_profile_with_missing_ground_is_rejected(tmp_path):
         assert "has no ground layer" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected a ValueError")
+
+
+def test_profile_camera_overrides_distance_pitch_and_yaw():
+    world = build_synthetic_world(7)
+    profile = SceneProfile(
+        name="camera",
+        layers=(LayerProfile(3, "ground"),),
+        camera=CameraProfile(pitch_deg=45.0, yaw_deg=90.0, distance=100.0),
+    )
+    camera = dump_camera(world, 640, 360, profile=profile)
+    center = np.array([256.0, 0.0, 256.0], dtype=np.float32)
+    offset = camera.eye - center
+    assert abs(float(offset[1]) - 100.0) < 1e-3
+    assert abs(float(np.hypot(offset[0], offset[2])) - 100.0) < 1e-3
+    assert float(offset[0]) > 99.0

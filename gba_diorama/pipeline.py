@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,15 +62,25 @@ def dump_camera(
     width: int = DEFAULT_WIDTH,
     height: int = DEFAULT_HEIGHT,
     yaw_deg: float = 0.0,
+    profile: SceneProfile | None = None,
 ) -> Camera:
     """Frame a dumped screen-sized map without stretching its aspect ratio."""
 
     world_w, world_h = scene_extent(world)
     center = np.array([world_w * 0.5, 0.0, world_h * 0.5], dtype=np.float32)
+    max_dim = max(world_w, world_h)
+    if profile is not None and profile.camera.yaw_deg is not None:
+        yaw_deg = profile.camera.yaw_deg
     yaw = np.deg2rad(yaw_deg)
-    radius = max(world_w, world_h) * 1.15
+    distance = max_dim * 1.15
+    if profile is not None and profile.camera.distance is not None:
+        distance = max(1.0, profile.camera.distance)
+    pitch_deg = 25.6
+    if profile is not None and profile.camera.pitch_deg is not None:
+        pitch_deg = min(89.0, max(1.0, profile.camera.pitch_deg))
+    eye_height = distance * math.tan(math.radians(pitch_deg))
     eye = center + np.array(
-        [np.sin(yaw) * radius, max(world_w, world_h) * 0.55, np.cos(yaw) * radius],
+        [np.sin(yaw) * distance, eye_height, np.cos(yaw) * distance],
         dtype=np.float32,
     )
     return Camera(
@@ -216,7 +227,7 @@ def render_dump(
         min_overlay_coverage=0.0 if all_layers else 0.05,
         profile=profile,
     )
-    camera = dump_camera(world, width, height, yaw_deg)
+    camera = dump_camera(world, width, height, yaw_deg, profile=profile)
     scene = build_scene(world, camera)
     image = render(
         scene.triangles,

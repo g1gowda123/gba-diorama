@@ -162,12 +162,21 @@ class LayerProfile:
 
 
 @dataclass(frozen=True)
+class CameraProfile:
+    """Optional camera overrides carried by a scene profile."""
+
+    pitch_deg: float | None = None
+    yaw_deg: float | None = None
+    distance: float | None = None
+
+
+@dataclass(frozen=True)
 class SceneProfile:
     name: str
     layers: tuple[LayerProfile, ...]
     match: ProfileMatch = field(default_factory=ProfileMatch)
     game_code: str | None = None
-    camera: dict[str, float] = field(default_factory=dict)
+    camera: CameraProfile = field(default_factory=CameraProfile)
 
     def matches(self, signature: SceneSignature, game_code: str = "") -> bool:
         if self.game_code and self.game_code not in {"*", ""}:
@@ -282,20 +291,29 @@ def _profile_from_dict(
         screen_sizes=_optional_tuple(screen_sizes),
     )
 
-    camera = data.get("camera", {})
-    if not isinstance(camera, dict):
-        camera = {}
+    camera_data = data.get("camera", {})
+    if not isinstance(camera_data, dict):
+        camera_data = {}
+    camera = CameraProfile(
+        pitch_deg=_optional_float(camera_data.get("pitch_deg")),
+        yaw_deg=_optional_float(camera_data.get("yaw_deg")),
+        distance=_optional_float(camera_data.get("distance")),
+    )
     return SceneProfile(
         name=name,
         layers=layers,
         match=match,
         game_code=str(data["game_code"]) if data.get("game_code") else None,
-        camera={str(key): float(value) for key, value in camera.items()},
+        camera=camera,
     )
 
 
 def _optional_int(value: object) -> int | None:
     return None if value is None else _parse_int(value)
+
+
+def _optional_float(value: object) -> float | None:
+    return None if value is None else float(value)
 
 
 def _optional_tuple(value: object) -> tuple[int, ...] | None:

@@ -79,7 +79,8 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 
 1. **Profile discovery/debug UI.** Auto-load a profile directory, show the
    current signature and chosen profile, and add a hotkey/overlay to cycle layer
-   roles and heights.
+   roles and heights. Camera overrides (`distance`, `pitch_deg`, `yaw_deg`) are
+   already implemented in `SceneProfile.camera`.
 2. **Parallax depth / world atlas.** Implement E1/E2 in
    `docs/EXPERIMENTS.md`; expose a confidence value and fallback. This is what
    turns a screen-space dump into a real world, and it should replace the
