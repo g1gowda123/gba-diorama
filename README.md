@@ -24,7 +24,7 @@ on a tilted plinth. The example profile opts into a naive constant-height
 extrusion of the sparse BG1 canopy; generic renders still skip sparse overlays
 until height inference can separate tree canopies from buildings, and
 `--all-layers` shows the unprofiled version. This image was re-rendered after
-fixing the BG/OBJ vertical flip.
+fixing the OBJ vertical flip; both the BG and OBJ FBOs are top-down.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
@@ -203,7 +203,7 @@ sparse-overlay skip.
   distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 27 tests.
+- Deterministic CLI and 37 tests.
 
 ## What is not done yet
 

@@ -147,3 +147,20 @@ def test_obj_sprite_is_cropped_from_oam():
     assert sprite.texture.shape == (16, 16, 4)
     assert sprite.x == (32 + 48) / 2 * (512 / 96)
     assert sprite.z == (16 + 32) / 2 * (512 / 96)
+
+
+def test_obj_sprite_preserves_top_down_orientation():
+    h, w = 32, 32
+    obj = np.zeros((h, w, 4), dtype=np.uint8)
+    obj[8:16, 8:24] = (255, 0, 0, 255)
+    obj[16:24, 8:24] = (0, 0, 255, 255)
+    oam = bytearray(0x400)
+    # OAM entry 0: x=8, y=8, square 16x16.
+    oam[0:2] = (8 | (0 << 14)).to_bytes(2, "little")
+    oam[2:4] = (8 | (1 << 14)).to_bytes(2, "little")
+    adapted = DumpWorld.from_dump(
+        _fake_dump({2: _layer(h, w, 1)}, obj=obj, oam=np.frombuffer(oam, dtype=np.uint8))
+    )
+    texture = adapted.sprites[0].texture
+    assert tuple(texture[0, 0]) == (255, 0, 0, 255)
+    assert tuple(texture[-1, 0]) == (0, 0, 255, 255)

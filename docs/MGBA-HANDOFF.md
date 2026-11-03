@@ -101,9 +101,10 @@ Implementation notes:
   the hook removes the trigger after writing. This works after the target frame
   has already passed.
 - Readback uses `glReadPixels` from each layer FBO, not `glGetTexImage`, so the
-  same code works on GLES3. BG FBOs are already top-down; the OBJ FBO is
-  bottom-up and must be flipped. `flip_y` in the metadata is false because the
-  loader receives already-oriented BG images.
+  same code works on GLES3. Both the BG and OBJ FBOs are already top-down;
+  do not flip either one. `flip_y` in the metadata is false because the loader
+  receives already-oriented images. An earlier version flipped the OBJ layer,
+  which made every sprite appear upside down.
 - Clear stale GL errors before readback and check
   `glCheckFramebufferStatus()`; otherwise the first layer can be dropped.
 - If `renderer->scale <= 0`, the hook refuses to write a 0×0 dump and prints a

@@ -79,7 +79,7 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
   signature (BG2 ground, BG3 backdrop ignored, BG1 canopy at a naive constant
   height).
-- `tests/`: 36 tests covering decode, dump round-trip, profiles, atlas
+- `tests/`: 37 tests covering decode, dump round-trip, profiles, atlas
   stitching/coverage, parallax, ground compositing, mesh, render, post,
   fallback, determinism.
 

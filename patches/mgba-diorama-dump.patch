@@ -24,7 +24,7 @@ index 71ab7bb..a360e4f 100644
  	renderers/software-mode0.c
 diff --git a/src/gba/renderers/diorama-dump.c b/src/gba/renderers/diorama-dump.c
 new file mode 100644
-index 0000000..d630764
+index 0000000..b5f3a2d
 --- /dev/null
 +++ b/src/gba/renderers/diorama-dump.c
 @@ -0,0 +1,225 @@
@@ -86,7 +86,7 @@ index 0000000..d630764
 +		return false;
 +	}
 +
-+	/* BG FBOs are already top-down; the OBJ FBO is bottom-up. */
++	/* Both BG and OBJ FBOs are already top-down. */
 +	if (flipY) {
 +		int stride = width * 4;
 +		uint8_t* row = malloc(stride);
@@ -244,7 +244,7 @@ index 0000000..d630764
 +			fprintf(stderr, "gba-diorama: failed to dump BG%d\n", i);
 +		}
 +	}
-+	if (!_dumpLayer(dir, "obj.rgba", renderer->fbo[GBA_GL_FBO_OBJ], width, height, true)) {
++	if (!_dumpLayer(dir, "obj.rgba", renderer->fbo[GBA_GL_FBO_OBJ], width, height, false)) {
 +		fprintf(stderr, "gba-diorama: failed to dump OBJ\n");
 +	}
 +
