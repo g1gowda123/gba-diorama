@@ -67,6 +67,23 @@ class GbaDump:
         return str(self.meta.get("game", {}).get("code", ""))
 
 
+def layer_scroll(dump: GbaDump, index: int) -> tuple[int, int]:
+    """Return a BG's scroll offset in dump-image pixels."""
+
+    scale = int(dump.meta.get("scale", 1))
+    bg = dump.meta.get("bg")
+    if isinstance(bg, list) and index < len(bg) and isinstance(bg[index], dict):
+        scroll = bg[index].get("scroll", [0, 0])
+        return int(scroll[0]) * scale, int(scroll[1]) * scale
+
+    # The synthetic exporter uses the raw register arrays instead of a bg list.
+    hofs = dump.meta.get("bg_hofs", [])
+    vofs = dump.meta.get("bg_vofs", [])
+    x = int(hofs[index]) * scale if index < len(hofs) else 0
+    y = int(vofs[index]) * scale if index < len(vofs) else 0
+    return x, y
+
+
 def load_dump(root: str | Path) -> GbaDump:
     root = Path(root)
     meta_path = root / "meta.json"

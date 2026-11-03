@@ -54,7 +54,9 @@ to a base layer?
 **Risks:** independently animated clouds/water; layers that scroll in discrete
 steps; cutscenes.
 
-**Status:** next. Pair with E1 in the first real-game milestone.
+**Status:** prototype. `parallax.py` estimates per-layer scroll ratios and a
+confidence value from a dump sequence; it is not yet fed back into mesh heights
+or profile selection.
 
 ## E3 — Generic tilemap decoder + voxel terrain
 

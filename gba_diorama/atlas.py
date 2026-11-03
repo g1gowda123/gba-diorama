@@ -15,7 +15,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .dump import GbaDump, load_dump
+from .dump import GbaDump, layer_scroll, load_dump
 
 
 @dataclass
@@ -32,21 +32,6 @@ class AtlasResult:
             index: float(mask.mean()) if mask.size else 0.0
             for index, mask in self.coverage.items()
         }
-
-
-def _layer_offset(dump: GbaDump, index: int) -> tuple[int, int]:
-    scale = int(dump.meta.get("scale", 1))
-    bg = dump.meta.get("bg")
-    if isinstance(bg, list) and index < len(bg) and isinstance(bg[index], dict):
-        scroll = bg[index].get("scroll", [0, 0])
-        return int(scroll[0]) * scale, int(scroll[1]) * scale
-
-    # The synthetic exporter uses the raw register arrays instead of a bg list.
-    hofs = dump.meta.get("bg_hofs", [])
-    vofs = dump.meta.get("bg_vofs", [])
-    x = int(hofs[index]) * scale if index < len(hofs) else 0
-    y = int(vofs[index]) * scale if index < len(vofs) else 0
-    return x, y
 
 
 def _blend_into(canvas: np.ndarray, image: np.ndarray, x: int, y: int) -> None:
@@ -84,7 +69,7 @@ def stitch_dumps(
             image = dump.layers.get(index)
             if image is None:
                 continue
-            x, y = _layer_offset(dump, index)
+            x, y = layer_scroll(dump, index)
             placements.setdefault(index, []).append((x, y, image))
 
     if not placements:
