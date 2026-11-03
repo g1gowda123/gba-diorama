@@ -1,0 +1,42 @@
+# Emerald Route 101 overworld, captured from mGBA frame 4800 at 2x scale.
+#
+# This is an example profile, not a hardcoded game rule. Pass it explicitly:
+#   python -m gba_diorama --dump <dir> --profile profiles/emerald-route101.toml
+#
+# The dump hook does not emit mGameInfo yet, so matching is by scene signature
+# only. Once game info is in meta.json, add:
+#   game_code = "BPEE"
+
+[[profiles]]
+name = "emerald-route101"
+
+[profiles.match]
+mode = 0
+enabled = 0b1111
+priorities = [0, 1, 2, 3]
+affine_mask = 0
+screen_sizes = [0, 0, 0, 0]
+
+# BG3 is a low-detail checkerboard backdrop in this scene; BG2 is the world.
+[[profiles.layers]]
+bg = 3
+role = "ignore"
+
+[[profiles.layers]]
+bg = 2
+role = "ground"
+height = 0.0
+material = "ground"
+side_material = "dirt"
+
+# Sparse foreground canopy. Keep it out of the mesh until height inference can
+# distinguish tree tops from buildings. Change this to role = "world" with
+# height = 18.0 to see the naive extrusion.
+[[profiles.layers]]
+bg = 1
+role = "ignore"
+
+[[profiles.layers]]
+bg = 0
+role = "ui"
+flat = true

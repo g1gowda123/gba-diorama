@@ -64,7 +64,8 @@ flat UI overlay.
 
 ## 4. Scene signature and profiles
 
-A profile is a data record, not code. A proposed TOML shape:
+A profile is a data record, not code. The loader lives in
+`gba_diorama/profiles.py`; the supported TOML shape is:
 
 ```toml
 [profile.emerald.overworld]
@@ -87,13 +88,16 @@ layers = [
 ]
 ```
 
-Matching order:
+Matching order implemented by `ProfileBook.match()`:
 
-1. Exact ROM hash override (optional, user-supplied).
-2. Game code (`mGameInfo.code`, e.g. `BPEE`) + scene signature.
-3. Base-game profile for romhacks with the same code.
-4. Generic fallback: choose the ground from alpha coverage × tile variety,
+1. Game code (`mGameInfo.code`, e.g. `BPEE`) + scene signature.
+2. Signature-only profile (romhacks and dumps without game info).
+3. Generic fallback: choose the ground from alpha coverage × tile variety,
    stack layers in front of it, keep BG0 UI flat, mild camera.
+
+An exact ROM-hash override is still a future extension. The current mGBA dump
+hook does not write `mGameInfo`; `--profile` therefore usually selects by
+signature.
 
 Profiles should be hot-reloadable while the emulator runs. A debug overlay
 should let the user cycle layer roles and heights live; that is faster than

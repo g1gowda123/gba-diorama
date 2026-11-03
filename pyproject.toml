@@ -13,6 +13,7 @@ authors = [{ name = "g1gowda123" }]
 dependencies = [
     "numpy>=1.24",
     "pillow>=9.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

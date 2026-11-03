@@ -153,10 +153,12 @@ Implementation notes:
 
 ### Phase 4 — profiles and debug UI
 
-- Add a debug overlay: current scene signature, layer roles, heights, confidence,
-  fallback reason.
-- Hot-reload profile TOML.
-- Add hotkeys to cycle layer roles/heights and toggle 2D fallback.
+- Offline profile loader is implemented in `gba_diorama/profiles.py`; TOML
+  profiles match mode/enabled/priorities/affine/screen sizes and optional game
+  code, then assign ground/world/UI roles, heights, and materials.
+- Still to do: auto-load a profile directory, hot-reload TOML, add a debug
+  overlay (signature, roles, heights, confidence, fallback reason), and add
+  hotkeys to cycle roles/heights and toggle 2D fallback.
 - Log a one-line scene signature on change so users can report unsupported
   scenes.
 
@@ -177,6 +179,8 @@ Examples:
 The signature should be derived from `renderer->dispcnt` and the BG control
 registers, not from game code. `mGameInfo.code` selects the profile family;
 romhacks inherit the base code unless a hash/name override exists.
+`SceneSignature.from_meta()` implements this for dump metadata; the current
+dump hook does not emit `mGameInfo`, so signature-only matching is the default.
 
 ## 6. Fallback rules
 

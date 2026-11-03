@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image
 
 from .gba import TextBg, decode_oam_entry, decode_text_bg
+from .profiles import SceneProfile
 
 LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
 
@@ -270,6 +271,7 @@ class DumpWorld:
     layer_side_material: dict[int, np.ndarray]
     sprites: list = field(default_factory=list)
     ground_layer: int = 3
+    profile: SceneProfile | None = None
 
     @classmethod
     def from_dump(
@@ -277,6 +279,7 @@ class DumpWorld:
         dump: GbaDump,
         *,
         min_overlay_coverage: float = 0.0,
+        profile: SceneProfile | None = None,
     ) -> "DumpWorld":
         if not any(index in dump.layers for index in (1, 2, 3)):
             raise ValueError("dump has no BG1/BG2/BG3 layer")
@@ -299,43 +302,98 @@ class DumpWorld:
             unique = len({tile.tobytes() for tile in tiles}) / max(1, len(tiles))
             return coverage * (0.5 + 0.5 * min(1.0, unique * 4.0))
 
-        ground_index = max(
-            (index for index in (1, 2, 3) if index in dump.layers),
-            key=score,
-        )
+        if profile is not None:
+            ground_index = profile.ground_layer
+            if ground_index is None:
+                raise ValueError(f"profile {profile.name!r} has no ground layer")
+            if ground_index not in dump.layers:
+                raise ValueError(
+                    f"profile {profile.name!r} wants BG{ground_index}, "
+                    "but that layer is not present in the dump"
+                )
+        else:
+            ground_index = max(
+                (index for index in (1, 2, 3) if index in dump.layers),
+                key=score,
+            )
+
         ground = dump.layers[ground_index]
         h, w = ground.shape[:2]
         if h % 8 or w % 8:
             raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
         cells = (h // 8, w // 8)
         terrain = np.zeros(cells, dtype=np.float32)
-        ground_side = np.full(cells, "dirt", dtype=object)
+        ground_side = np.full(
+            cells,
+            profile.ground_side_material if profile is not None else "dirt",
+            dtype=object,
+        )
 
         present: dict[int, np.ndarray] = {}
         heights: dict[int, np.ndarray] = {}
         materials: dict[int, np.ndarray] = {}
         sides: dict[int, np.ndarray] = {}
-        # Only layers in front of the ground are extruded.  Layers behind it
-        # (higher BG index) are backdrop and are left for the atlas pass.
-        for index in range(1, ground_index):
-            image = dump.layers.get(index)
-            if image is None:
-                continue
+
+        def add_overlay(
+            index: int,
+            image: np.ndarray,
+            height: float,
+            material: str,
+            side_material: str,
+            min_coverage: float,
+        ) -> None:
             if image.shape[:2] != (h, w):
                 raise ValueError(
                     f"BG{index} size {image.shape[1]}x{image.shape[0]} does not match "
                     f"BG{ground_index} {w}x{h}"
                 )
-            if float((image[..., 3] > 0).mean()) < min_overlay_coverage:
+            if float((image[..., 3] > 0).mean()) < min_coverage:
                 # Sparse layers are usually foreground detail (tree tops,
                 # weather) that needs height inference, not a full extrusion.
-                continue
-            default_height = 6.0 if index == 2 else 18.0
+                return
             alpha = image[..., 3].reshape(cells[0], 8, cells[1], 8).max(axis=(1, 3))
             present[index] = alpha > 0
-            heights[index] = np.full(cells, default_height, dtype=np.float32)
-            materials[index] = np.full(cells, "", dtype=object)
-            sides[index] = np.full(cells, "stone", dtype=object)
+            heights[index] = np.full(cells, height, dtype=np.float32)
+            materials[index] = np.full(cells, material, dtype=object)
+            sides[index] = np.full(cells, side_material, dtype=object)
+
+        if profile is not None:
+            # Explicit profile layers are trusted even when sparse: a profile
+            # may deliberately mark a canopy or a fence as a thin overlay.
+            for layer in profile.layers:
+                if layer.bg == ground_index or layer.is_ui:
+                    continue
+                image = dump.layers.get(layer.bg)
+                if image is None:
+                    continue
+                default_height = (
+                    layer.height
+                    if layer.height > 0
+                    else (6.0 if layer.bg == 2 else 18.0)
+                )
+                add_overlay(
+                    layer.bg,
+                    image,
+                    default_height,
+                    layer.material,
+                    layer.side_material or "stone",
+                    layer.min_coverage,
+                )
+        else:
+            # Only layers in front of the ground are extruded.  Layers behind
+            # it (higher BG index) are backdrop and are left for the atlas pass.
+            for index in range(1, ground_index):
+                image = dump.layers.get(index)
+                if image is None:
+                    continue
+                add_overlay(
+                    index,
+                    image,
+                    6.0 if index == 2 else 18.0,
+                    "",
+                    "stone",
+                    min_overlay_coverage,
+                )
 
         sprites = _extract_obj_sprites(dump, w, h, 512.0 / max(w, h))
         return cls(
@@ -348,6 +406,7 @@ class DumpWorld:
             layer_side_material=sides,
             sprites=sprites,
             ground_layer=ground_index,
+            profile=profile,
         )
 
     def ground_height(self, x: float, z: float) -> float:

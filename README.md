@@ -80,6 +80,10 @@ python -m gba_diorama --dump path/to/dump --out /tmp/dump.png
 # Show every BG overlay, even sparse foreground layers
 python -m gba_diorama --dump path/to/dump --all-layers --out /tmp/all-layers.png
 
+# Apply an explicit data-only scene profile
+python -m gba_diorama --dump path/to/dump \
+    --profile profiles/emerald-route101.toml --out /tmp/profile.png
+
 # Force the 3D path for a UI scene (debugging only)
 python -m gba_diorama --dump path/to/dump --force-3d --out /tmp/ui-3d.png
 
@@ -170,9 +174,11 @@ off-screen map data too badly.
   extents, and OBJ-layer sprites cropped from OAM entries.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
+- Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size
+  signature, then assign ground/world/UI roles, heights, and materials.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 20 tests.
+- Deterministic CLI and 27 tests.
 
 ## What is not done yet
 
@@ -183,7 +189,8 @@ off-screen map data too badly.
   is still a primitive, not a full per-sprite renderer.
 - Sparse foreground layers are skipped by default until height inference can
   tell tree canopies from buildings.
-- No scene detection or profile system yet.
+- Profiles are opt-in (`--profile`); there is no automatic profile discovery or
+  debug overlay yet.
 - No temporal world atlas; the camera is intentionally mild so missing
   off-screen pixels are not obvious.
 - The rasterizer is CPU-side and meant for iteration, not real-time emulator
@@ -195,6 +202,7 @@ off-screen map data too badly.
 gba_diorama/
   gba.py         GBA text-BG / palette / OAM decoding
   dump.py        load/export the mGBA dump format + DumpWorld adapter
+  profiles.py    scene signatures + data-only TOML layer profiles
   inspect.py     dump -> per-layer PNGs
   synthetic.py   synthetic GBA-format world (the test fixture)
   mesh.py        heightfields, side walls, plinth, sprite billboards
@@ -204,6 +212,8 @@ gba_diorama/
   pipeline.py    demo camera + render pipeline
   __main__.py    CLI
 tests/           decoder, dump, mesh, raster, pipeline tests
+profiles/
+  emerald-route101.toml  example signature/profile override
 docs/
   DESIGN.md      deeper architecture and rendering notes
   EXPERIMENTS.md experiments E1–E7, hypotheses and order
@@ -221,13 +231,14 @@ Synthetic GBA tilemaps → decoder → heightfield diorama → post stack.
 renderer. It exports BG0–BG3, OBJ, VRAM, palette, OAM, registers, and a frame
 id. `dump.py` loads it, `inspect.py` writes per-layer PNGs, and
 `python -m gba_diorama --dump` meshes a real frame. Validated on Emerald Route
-101. Next: profiles, then the world atlas/parallax depth.
+101.
 
-**M2 — profiles and fallback**
-Detect scene signature from `DISPCNT`/`BGxCNT` (BG mode, enabled mask,
-priorities, affine mask, screen sizes). Map layers to roles via a data-only
-profile. Keep the stock 2D composite for menus, battles, and affine/raster
-scenes.
+**M2 — profiles and fallback (in progress)**
+Scene signatures (`mode`, enabled mask, priorities, affine mask, screen sizes)
+and the TOML profile loader are implemented. `--profile` maps BG layers to
+ground/world/UI roles, heights, and materials. The stock 2D composite handles
+menus, battles, and affine/raster scenes. Remaining: automatic profile
+discovery, a debug overlay, and profile-driven camera settings.
 
 **M3 — world atlas and parallax depth**
 Stitch BG layers into a persistent world atlas as the camera scrolls. Estimate
