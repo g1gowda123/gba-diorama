@@ -20,8 +20,10 @@ dist/
 # Local render output and captures
 out/
 dumps/
+roms/
 *.gba
 *.agb
+*.zip
 *.sav
 *.srm
 *.state

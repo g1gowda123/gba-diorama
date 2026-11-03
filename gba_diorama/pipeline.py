@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
-from .mesh import Scene, build_scene
+from .dump import DumpWorld, GbaDump, load_dump
+from .mesh import Scene, build_scene, scene_extent
 from .post import apply_post
 from .raster import Camera, render
 from .synthetic import WORLD_PX, SyntheticWorld, build_synthetic_world
@@ -53,12 +55,49 @@ def demo_camera(
     )
 
 
+def dump_camera(
+    world: DumpWorld,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    yaw_deg: float = 0.0,
+) -> Camera:
+    """Frame a dumped screen-sized map without stretching its aspect ratio."""
+
+    world_w, world_h = scene_extent(world)
+    center = np.array([world_w * 0.5, 0.0, world_h * 0.5], dtype=np.float32)
+    yaw = np.deg2rad(yaw_deg)
+    radius = max(world_w, world_h) * 1.15
+    eye = center + np.array(
+        [np.sin(yaw) * radius, max(world_w, world_h) * 0.55, np.cos(yaw) * radius],
+        dtype=np.float32,
+    )
+    return Camera(
+        eye=eye,
+        target=center,
+        up=np.array([0.0, 1.0, 0.0], dtype=np.float32),
+        fov_deg=42.0,
+        width=width,
+        height=height,
+        near=1.0,
+        far=4000.0,
+    )
+
+
 @dataclass
 class DemoResult:
     image: np.ndarray
     scene: Scene
     world: SyntheticWorld
     camera: Camera
+
+
+@dataclass
+class DumpResult:
+    image: np.ndarray
+    scene: Scene
+    world: DumpWorld
+    camera: Camera
+    dump: GbaDump
 
 
 def render_demo(
@@ -82,3 +121,33 @@ def render_demo(
     if post:
         image = apply_post(image)
     return DemoResult(image=image, scene=scene, world=world, camera=camera)
+
+
+def render_dump(
+    root: str | Path,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    yaw_deg: float = 0.0,
+    post: bool = True,
+    all_layers: bool = False,
+) -> DumpResult:
+    """Render a real mGBA dump through the same mesher as the synthetic demo."""
+
+    dump = load_dump(root)
+    world = DumpWorld.from_dump(
+        dump,
+        min_overlay_coverage=0.0 if all_layers else 0.05,
+    )
+    camera = dump_camera(world, width, height, yaw_deg)
+    scene = build_scene(world, camera)
+    image = render(
+        scene.triangles,
+        camera,
+        _background(width, height),
+        fog_color=(18, 24, 40),
+        fog_start=900.0,
+        fog_end=1900.0,
+    )
+    if post:
+        image = apply_post(image)
+    return DumpResult(image=image, scene=scene, world=world, camera=camera, dump=dump)

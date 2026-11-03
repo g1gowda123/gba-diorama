@@ -6,6 +6,10 @@ framebuffer support option for shaders"), which is the revision the initial
 research was done against. Line numbers will drift; function names are the
 stable anchors.
 
+**Status:** the Phase 1 dump hook is implemented in
+`patches/mgba-diorama-dump.patch` and has been built against mGBA Qt at
+`39a3d93`. It writes real Emerald frames that `gba_diorama.dump` can load.
+
 ## 1. Why mGBA
 
 mGBA's OpenGL renderer already produces exactly the inputs a 3D2D pass needs:
@@ -45,83 +49,84 @@ composite; it does not need to rewrite the PPU.
 pointers, so renderer-level code can decode tilemaps without game-specific
 symbols.
 
-## 3. Proposed dump format
+## 3. Implemented dump format
 
-Add an opt-in dump behind an environment variable, e.g.
-`GBA_DIORAMA_DUMP=/path/to/out`, so normal users pay nothing.
-
-Dump once per N frames, or on a hotkey. Capture **before** `_finalizeLayers()`
-so the layer textures are still raw.
+The patch writes one directory, once, after `_finalizeLayers()` and before the
+renderer clears its per-frame state:
 
 ```
-frame_000001/
-  meta.json
-  vram.bin          0x18000 bytes
-  palette.bin       0x400 bytes
-  oam.bin           0x400 bytes
-  bg0.rgba          RGBA8, width×height (usually 240*scale × 160*scale)
-  bg1.rgba
-  bg2.rgba
-  bg3.rgba
-  obj.rgba
-  obj_flags.bin     raw flags (RGBA8I or uint32 per pixel; document it)
-  window.bin
-  backdrop.bin
+meta.json
+vram.bin          0x18000 bytes
+palette.bin       0x400 bytes
+oam.bin           0x400 bytes
+bg0.rgba          RGBA8, 240*scale x 160*scale, top-down
+bg1.rgba
+bg2.rgba
+bg3.rgba
+obj.rgba
 ```
 
-`meta.json`:
+`meta.json` (actual output):
 
 ```json
 {
-  "frame": 1,
-  "game": {"title": "POKEMON EMER", "code": "BPEE", "maker": "01", "version": 0},
+  "format": "gba-diorama-dump",
+  "version": 1,
+  "frame": 120,
   "scale": 2,
   "screen": [240, 160],
   "layer_size": [480, 320],
-  "dispcnt": "0x1F40",
-  "bgcnt": ["0x0000", "0x0101", "0x0202", "0x0303"],
-  "bg_hofs": [0, 0, 0, 0],
-  "bg_vofs": [0, 0, 0, 0],
-  "bg_affine": [[1,0,0,1], [1,0,0,1], [1,0,0,1], [1,0,0,1]],
-  "bldcnt": "0x0000",
-  "bldalpha": "0x0000",
-  "bldy": "0x0000",
-  "mosaic": "0x0000",
-  "winin": "0x0000",
-  "winout": "0x0000"
+  "flip_y": false,
+  "dispcnt": 320,
+  "mode": 0,
+  "blda": 0, "bldb": 0, "bldy": 0,
+  "bg": [
+    {"index": 0, "enabled": true, "priority": 0, "char_base": 0,
+     "screen_base": 7168, "size": 0, "bpp": 4, "scroll": [0, 0],
+     "affine": false}
+  ]
 }
 ```
 
 Implementation notes:
 
-- `bg0.rgba`…`bg3.rgba` may be raw RGBA8 or PNG. Raw files need `layer_size`
-  in `meta.json`; PNGs carry their own dimensions. The lab loader supports both.
-- `glGetTexImage` on the layer textures is the least invasive readback. It
-  returns the texture at its actual size (`240*scale` × `160*scale`).
-- `glReadPixels` from each BG FBO is an alternative; bind the FBO and read.
-- GL textures are usually bottom-up. Flip rows before writing `.rgba`, or record
-  `"flip_y": true` in `meta.json` and flip in the loader.
-- RGBA8 is enough for the lab. If mGBA is using float framebuffers, convert to
-  RGBA8 on readback; the lab's `Texture` expects uint8.
+- Enable with `GBA_DIORAMA_DUMP_DIR=/path/to/out`. Optional
+  `GBA_DIORAMA_DUMP_FRAME=120` selects the frame (default 120) and the hook
+  writes once, then stops.
+- `GBA_DIORAMA_DUMP_DIR` must already exist. Use `mkdir -p` first.
+- Readback uses `glReadPixels` from each layer FBO, not `glGetTexImage`, so the
+  same code works on GLES3. Rows are flipped to top-down; `flip_y` is false.
+- Clear stale GL errors before readback and check
+  `glCheckFramebufferStatus()`; otherwise the first layer can be dropped.
+- RGBA8 is enough for the lab. The lab's `Texture` expects uint8.
+- obj flags/depth, window, and backdrop are not dumped yet. Add them when the
+  compositor needs them.
 - Do not commit dumps containing ROM-derived tiles. Use them locally; commit only
   synthetic fixtures and metrics.
 
 ## 4. Integration phases
 
-### Phase 1 — dump only
+### Phase 1 — dump only (done)
 
-- Add the dump hook to `GBAVideoGLRendererFinishFrame()`.
-- Add a `gba_diorama.dump` loader in the lab (not written yet). It should load
-  `meta.json`, decode the raw BG tilemaps through `gba.py`, and compare the
-  decoded layers against the dumped `.rgba` files.
-- This validates the decoder against mGBA before any 3D work.
+- The dump hook is in `GBAVideoGLRendererFinishFrame()` via
+  `patches/mgba-diorama-dump.patch`.
+- `gba_diorama/dump.py` loads the format, decodes tilemaps from VRAM when a
+  layer image is absent, and `gba_diorama.inspect` writes per-layer PNGs.
+- The synthetic dump round-trip is covered by tests. Real Emerald Route 101 was
+  captured at 2x scale and rendered offline.
+- Decoded VRAM matches the dumped BG0 exactly. BG1 differs on ~2.2% of pixels
+  (scroll/edge sampling); BG2/BG3 mismatch when meta byte addresses are treated
+  as BGCNT fields. Correct conversion is `char_base = meta_char_base >> 13`,
+  `screen_base = meta_screen_base >> 10`.
 
-### Phase 2 — offline 3D render
+### Phase 2 — offline 3D render (done)
 
-- Load a real dump into the lab.
-- Build the mesh from the decoded layers and profile.
-- Render side-by-side with the stock composite.
-- Iterate on camera, heights, materials, and post without touching mGBA.
+- `python -m gba_diorama --dump <dir>` loads a real dump, picks the ground layer
+  by alpha coverage × tile variety, meshes non-square world extents, and crops
+  visible OAM entries from the OBJ layer.
+- Route 101 output: `docs/images/emerald-route101.png`.
+- Sparse overlay layers are skipped by default until height inference can
+  distinguish canopies from buildings; `--all-layers` forces the naive version.
 
 ### Phase 3 — `hd2d` pass in mGBA
 
@@ -177,13 +182,39 @@ window mask flat on top with the stock rules.
 ## 7. Build and run
 
 ```bash
-cmake -S . -B build -DBUILD_QT=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+git clone https://github.com/mgba-emu/mgba
+cd mgba
+git checkout 39a3d93
+git apply /path/to/gba-diorama/patches/mgba-diorama-dump.patch
+
+cmake -S . -B build -G Ninja \
+  -DBUILD_QT=ON -DBUILD_SDL=OFF \
+  -DBUILD_GL=ON -DBUILD_GLES3=ON -DUSE_EPOXY=ON \
+  -DSKIP_GIT=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build -j"$(nproc)"
 ```
 
-`BUILD_GL` and `BUILD_GLES3` default on. In the Qt frontend, enable
-**Configure → Emulation → Video → OpenGL** (`hwaccelVideo`) and set
-**Video scale** to 2–4 for development (1–16 supported).
+`SKIP_GIT=ON` avoids a CMake failure when the checkout has no release tags.
+
+The GL renderer is only active in the Qt frontend, not the default SDL one.
+Enable **Configure → Emulation → Video → OpenGL** (`hwaccelVideo=1`) and set
+**Video scale** to 2–4 for development (1–16 supported). Then:
+
+```bash
+mkdir -p /tmp/emerald-dump
+GBA_DIORAMA_DUMP_DIR=/tmp/emerald-dump \
+GBA_DIORAMA_DUMP_FRAME=120 \
+build/qt/mgba-qt -C hwaccelVideo=1 -C videoScale=2 /path/to/emerald.gba
+```
+
+Inspect the result:
+
+```bash
+python3 -m gba_diorama.inspect /tmp/emerald-dump --out /tmp/emerald-layers
+```
+
+For a self-contained smoke-test ROM with no copyrighted assets, run
+`python3 tools/make_test_rom.py /tmp/diorama-test.gba` and boot that instead.
 
 ## 8. Performance notes
 

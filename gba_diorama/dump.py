@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .gba import TextBg, decode_text_bg
+from .gba import TextBg, decode_oam_entry, decode_text_bg
 
 LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
 
@@ -206,11 +206,59 @@ def export_synthetic_dump(
 
 
 @dataclass
+class DumpSprite:
+    texture: np.ndarray
+    x: float
+    z: float
+    width: float
+    height: float
+    kind: str = "player"
+    lean: float = 0.0
+
+
+def _extract_obj_sprites(dump: GbaDump, width: int, height: int, scale: float) -> list[DumpSprite]:
+    """Crop visible OAM entries out of the already-composited OBJ layer."""
+
+    if dump.obj is None or dump.oam is None:
+        return []
+    obj = dump.obj
+    if obj.shape[:2] != (height, width):
+        return []
+
+    sprites: list[DumpSprite] = []
+    for index in range(min(128, len(dump.oam) // 8)):
+        entry = decode_oam_entry(dump.oam[index * 8 : (index + 1) * 8], index)
+        if entry is None:
+            continue
+        x0 = max(0, entry.x * dump.meta.get("scale", 1))
+        y0 = max(0, entry.y * dump.meta.get("scale", 1))
+        x1 = min(width, (entry.x + entry.width) * dump.meta.get("scale", 1))
+        y1 = min(height, (entry.y + entry.height) * dump.meta.get("scale", 1))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        crop = obj[y0:y1, x0:x1]
+        if not np.any(crop[..., 3]):
+            continue
+        sprites.append(
+            DumpSprite(
+                texture=crop.copy(),
+                x=(x0 + x1) * 0.5 * scale,
+                z=(y0 + y1) * 0.5 * scale,
+                width=(x1 - x0) * scale,
+                height=(y1 - y0) * scale,
+                kind="player",
+            )
+        )
+    return sprites
+
+
+@dataclass
 class DumpWorld:
     """Minimal SyntheticWorld-compatible adapter for a decoded dump.
 
-    Only meaningful for 512x512 maps today.  Screen-space dumps need the world
-    atlas (experiment E1) before they can be meshed at their true scale.
+    A screen-sized dump becomes a small diorama: the selected ground layer is
+    flat, and layers in front of it are extruded.  A real world atlas
+    (experiment E1) is still needed to recover off-screen terrain.
     """
 
     layers: dict[int, np.ndarray]
@@ -221,15 +269,44 @@ class DumpWorld:
     layer_material: dict[int, np.ndarray]
     layer_side_material: dict[int, np.ndarray]
     sprites: list = field(default_factory=list)
+    ground_layer: int = 3
 
     @classmethod
-    def from_dump(cls, dump: GbaDump) -> "DumpWorld":
-        if 3 not in dump.layers:
-            raise ValueError("dump has no BG3 layer")
-        ground = dump.layers[3]
+    def from_dump(
+        cls,
+        dump: GbaDump,
+        *,
+        min_overlay_coverage: float = 0.0,
+    ) -> "DumpWorld":
+        if not any(index in dump.layers for index in (1, 2, 3)):
+            raise ValueError("dump has no BG1/BG2/BG3 layer")
+
+        # Pick the world layer by content, not by a fixed BG number.  A
+        # backdrop/checkerboard can cover the whole screen while carrying very
+        # few distinct tiles; the playfield is the high-coverage layer with
+        # many distinct tiles.  Profiles will eventually override this.
+        def score(index: int) -> float:
+            image = dump.layers[index]
+            h, w = image.shape[:2]
+            if h % 8 or w % 8:
+                return 0.0
+            coverage = float((image[..., 3] > 0).mean())
+            tiles = (
+                image.reshape(h // 8, 8, w // 8, 8, 4)
+                .transpose(0, 2, 1, 3, 4)
+                .reshape(-1, 8, 8, 4)
+            )
+            unique = len({tile.tobytes() for tile in tiles}) / max(1, len(tiles))
+            return coverage * (0.5 + 0.5 * min(1.0, unique * 4.0))
+
+        ground_index = max(
+            (index for index in (1, 2, 3) if index in dump.layers),
+            key=score,
+        )
+        ground = dump.layers[ground_index]
         h, w = ground.shape[:2]
         if h % 8 or w % 8:
-            raise ValueError(f"BG3 size {w}x{h} is not tile-aligned")
+            raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
         cells = (h // 8, w // 8)
         terrain = np.zeros(cells, dtype=np.float32)
         ground_side = np.full(cells, "dirt", dtype=object)
@@ -238,20 +315,29 @@ class DumpWorld:
         heights: dict[int, np.ndarray] = {}
         materials: dict[int, np.ndarray] = {}
         sides: dict[int, np.ndarray] = {}
-        for index, default_height in ((2, 6.0), (1, 18.0)):
+        # Only layers in front of the ground are extruded.  Layers behind it
+        # (higher BG index) are backdrop and are left for the atlas pass.
+        for index in range(1, ground_index):
             image = dump.layers.get(index)
             if image is None:
                 continue
             if image.shape[:2] != (h, w):
                 raise ValueError(
-                    f"BG{index} size {image.shape[1]}x{image.shape[0]} does not match BG3 {w}x{h}"
+                    f"BG{index} size {image.shape[1]}x{image.shape[0]} does not match "
+                    f"BG{ground_index} {w}x{h}"
                 )
+            if float((image[..., 3] > 0).mean()) < min_overlay_coverage:
+                # Sparse layers are usually foreground detail (tree tops,
+                # weather) that needs height inference, not a full extrusion.
+                continue
+            default_height = 6.0 if index == 2 else 18.0
             alpha = image[..., 3].reshape(cells[0], 8, cells[1], 8).max(axis=(1, 3))
             present[index] = alpha > 0
             heights[index] = np.full(cells, default_height, dtype=np.float32)
             materials[index] = np.full(cells, "", dtype=object)
             sides[index] = np.full(cells, "stone", dtype=object)
 
+        sprites = _extract_obj_sprites(dump, w, h, 512.0 / max(w, h))
         return cls(
             layers=dump.layers,
             terrain_height=terrain,
@@ -260,6 +346,8 @@ class DumpWorld:
             layer_height=heights,
             layer_material=materials,
             layer_side_material=sides,
+            sprites=sprites,
+            ground_layer=ground_index,
         )
 
     def ground_height(self, x: float, z: float) -> float:

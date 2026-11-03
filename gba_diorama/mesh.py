@@ -139,8 +139,12 @@ def _add_layer(
     name: str,
 ) -> None:
     img_h, img_w = image.shape[:2]
-    sx = WORLD_PX / img_w
-    sz = WORLD_PX / img_h
+    # Keep pixels square for non-square dumps.  WORLD_PX becomes the size of
+    # the longer axis instead of stretching every image to a 512x512 square.
+    scale = WORLD_PX / max(img_w, img_h)
+    sx = sz = scale
+    world_w = img_w * scale
+    world_h = img_h * scale
     tex = Texture(image, name=name)
     side_tex = {
         key: Texture(pix, name=f"side-{key}", wrap_u=True, wrap_v=False)
@@ -159,10 +163,10 @@ def _add_layer(
             np.array([x1, h, z0], dtype=np.float32),
             np.array([x1, h, z1], dtype=np.float32),
             np.array([x0, h, z1], dtype=np.float32),
-            (x0 / WORLD_PX, z0 / WORLD_PX),
-            (x1 / WORLD_PX, z0 / WORLD_PX),
-            (x1 / WORLD_PX, z1 / WORLD_PX),
-            (x0 / WORLD_PX, z1 / WORLD_PX),
+            (x0 / world_w, z0 / world_h),
+            (x1 / world_w, z0 / world_h),
+            (x1 / world_w, z1 / world_h),
+            (x0 / world_w, z1 / world_h),
             tex,
             alpha_test=alpha_test,
             name=f"{name}-top",
@@ -255,7 +259,7 @@ def _stone_top(seed: int, base: tuple[int, int, int], dark: tuple[int, int, int]
     return out
 
 
-def _add_base(out: list[Triangle]) -> None:
+def _add_base(out: list[Triangle], world_w: float, world_h: float) -> None:
     stone_side = Texture(SIDE_TEXTURES["stone"], name="base-stone", wrap_u=True, wrap_v=False)
     dark_side = Texture(SIDE_TEXTURES["stone_dark"], name="base-dark", wrap_u=True, wrap_v=False)
     stone_top = Texture(_stone_top(11, (112, 112, 122), (78, 78, 88)), name="base-top", wrap_u=True, wrap_v=True)
@@ -365,31 +369,31 @@ def _add_base(out: list[Triangle]) -> None:
         )
 
     # Tier 1: the tabletop the map sits on.
-    walls(-16.0, WORLD_PX + 16.0, -16.0, WORLD_PX + 16.0, -10.0, -4.0, stone_side)
+    walls(-16.0, world_w + 16.0, -16.0, world_h + 16.0, -10.0, -4.0, stone_side)
     rim(
         -16.0,
-        WORLD_PX + 16.0,
+        world_w + 16.0,
         -16.0,
-        WORLD_PX + 16.0,
+        world_h + 16.0,
         0.0,
-        WORLD_PX,
+        world_w,
         0.0,
-        WORLD_PX,
+        world_h,
         -4.0,
         stone_top,
     )
 
     # Tier 2: a darker plinth below it.
-    walls(-32.0, WORLD_PX + 32.0, -32.0, WORLD_PX + 32.0, -16.0, -10.0, dark_side)
+    walls(-32.0, world_w + 32.0, -32.0, world_h + 32.0, -16.0, -10.0, dark_side)
     rim(
         -32.0,
-        WORLD_PX + 32.0,
+        world_w + 32.0,
         -32.0,
-        WORLD_PX + 32.0,
+        world_h + 32.0,
         -16.0,
-        WORLD_PX + 16.0,
+        world_w + 16.0,
         -16.0,
-        WORLD_PX + 16.0,
+        world_h + 16.0,
         -10.0,
         dark_top,
     )
@@ -430,7 +434,11 @@ def _add_sprites(out: list[Triangle], world: SyntheticWorld, camera: Camera) -> 
         )
 
     for sprite in world.sprites:
-        tex = sprite_tex.get(sprite.kind, sprite_tex["player"])
+        sprite_pixels = getattr(sprite, "texture", None)
+        if sprite_pixels is not None:
+            tex = Texture(sprite_pixels, name="sprite-obj")
+        else:
+            tex = sprite_tex.get(sprite.kind, sprite_tex["player"])
         gx = float(sprite.x)
         gz = float(sprite.z)
         gy = world.ground_height(gx, gz)
@@ -455,49 +463,55 @@ def _add_sprites(out: list[Triangle], world: SyntheticWorld, camera: Camera) -> 
         )
 
 
+def scene_extent(world: SyntheticWorld) -> tuple[float, float]:
+    """Return the world-space (width, depth) used by :func:`build_scene`."""
+
+    ground_layer = getattr(world, "ground_layer", 3)
+    h, w = world.layers[ground_layer].shape[:2]
+    scale = WORLD_PX / max(w, h)
+    return w * scale, h * scale
+
+
 def build_scene(world: SyntheticWorld, camera: Camera) -> Scene:
     triangles: list[Triangle] = []
+    ground_layer = getattr(world, "ground_layer", 3)
 
     _add_layer(
         triangles,
         world,
-        3,
-        world.layers[3],
-        np.ones_like(world.layer_present[1], dtype=bool),
+        ground_layer,
+        world.layers[ground_layer],
+        np.ones_like(world.terrain_height, dtype=bool),
         world.terrain_height,
         world.terrain_height,
         world.ground_side_material,
         alpha_test=False,
-        name="BG3-ground",
+        name=f"BG{ground_layer}-ground",
     )
-    _add_layer(
-        triangles,
-        world,
-        2,
-        world.layers[2],
-        world.layer_present[2],
-        world.layer_height[2],
-        world.terrain_height,
-        world.layer_side_material[2],
-        alpha_test=True,
-        name="BG2-mid",
-    )
-    _add_layer(
-        triangles,
-        world,
-        1,
-        world.layers[1],
-        world.layer_present[1],
-        world.layer_height[1],
-        world.terrain_height,
-        world.layer_side_material[1],
-        alpha_test=True,
-        name="BG1-top",
-    )
+    layer_names = {2: "BG2-mid", 1: "BG1-top"}
+    for index in sorted(world.layer_present, reverse=True):
+        name = layer_names.get(index, f"BG{index}-layer")
+        _add_layer(
+            triangles,
+            world,
+            index,
+            world.layers[index],
+            world.layer_present[index],
+            world.layer_height[index],
+            world.terrain_height,
+            world.layer_side_material[index],
+            alpha_test=True,
+            name=name,
+        )
 
-    _add_base(triangles)
+    world_w, world_h = scene_extent(world)
+    _add_base(triangles, world_w, world_h)
     _add_sprites(triangles, world, camera)
-    return Scene(
-        triangles=triangles,
-        layers={3: "BG3-ground", 2: "BG2-mid", 1: "BG1-top"},
+    layers = {ground_layer: f"BG{ground_layer}-ground"}
+    layers.update(
+        {
+            index: layer_names.get(index, f"BG{index}-layer")
+            for index in sorted(world.layer_present, reverse=True)
+        }
     )
+    return Scene(triangles=triangles, layers=layers)

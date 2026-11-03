@@ -1,6 +1,8 @@
 import numpy as np
 
-from gba_diorama.pipeline import render_demo
+from gba_diorama.dump import export_synthetic_dump
+from gba_diorama.pipeline import render_demo, render_dump
+from gba_diorama.synthetic import build_synthetic_world
 
 
 def test_render_demo_without_post():
@@ -15,3 +17,14 @@ def test_render_demo_with_post_is_deterministic():
     a = render_demo(256, 144, seed=7, post=True)
     b = render_demo(256, 144, seed=7, post=True)
     assert np.array_equal(a.image, b.image)
+
+
+def test_render_dump_from_vram(tmp_path):
+    world = build_synthetic_world(7)
+    export_synthetic_dump(world, tmp_path, write_layers=False)
+    result = render_dump(tmp_path, 256, 144, post=False, all_layers=True)
+    assert result.image.shape == (144, 256, 3)
+    assert result.image.dtype == np.uint8
+    assert result.image.std() > 4.0
+    assert result.world.ground_layer == 3
+    assert len(result.scene.triangles) > 500

@@ -1,0 +1,245 @@
+diff --git a/include/mgba/internal/gba/renderers/gl.h b/include/mgba/internal/gba/renderers/gl.h
+index f8e9875..582b6d9 100644
+--- a/include/mgba/internal/gba/renderers/gl.h
++++ b/include/mgba/internal/gba/renderers/gl.h
+@@ -211,6 +211,7 @@ struct GBAVideoGLRenderer {
+ 
+ void GBAVideoGLRendererCreate(struct GBAVideoGLRenderer* renderer);
+ void GBAVideoGLRendererSetScale(struct GBAVideoGLRenderer* renderer, int scale);
++void GBADioramaDumpFrame(struct GBAVideoGLRenderer* renderer);
+ 
+ #endif
+ 
+diff --git a/src/gba/CMakeLists.txt b/src/gba/CMakeLists.txt
+index 71ab7bb..a360e4f 100644
+--- a/src/gba/CMakeLists.txt
++++ b/src/gba/CMakeLists.txt
+@@ -22,6 +22,7 @@ set(SOURCE_FILES
+ 	overrides.c
+ 	renderers/cache-set.c
+ 	renderers/common.c
++	renderers/diorama-dump.c
+ 	renderers/gl.c
+ 	renderers/software-bg.c
+ 	renderers/software-mode0.c
+diff --git a/src/gba/renderers/diorama-dump.c b/src/gba/renderers/diorama-dump.c
+new file mode 100644
+index 0000000..a2edae9
+--- /dev/null
++++ b/src/gba/renderers/diorama-dump.c
+@@ -0,0 +1,203 @@
++/* Copyright (c) 2024 gba-diorama contributors
++ *
++ * This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++#include <mgba/internal/gba/renderers/gl.h>
++
++#ifdef BUILD_GLES3
++
++#include <mgba/internal/gba/io.h>
++#include <mgba-util/vfs.h>
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#define DIORAMA_DUMP_DEFAULT_FRAME 120
++#define DIORAMA_PATH_MAX 1024
++
++static bool _writeFile(const char* dir, const char* name, const void* data, size_t size) {
++	char path[DIORAMA_PATH_MAX];
++	int len = snprintf(path, sizeof(path), "%s/%s", dir, name);
++	if (len < 0 || (size_t) len >= sizeof(path)) {
++		fprintf(stderr, "gba-diorama: dump path too long: %s/%s\n", dir, name);
++		return false;
++	}
++	struct VFile* vf = VFileOpen(path, O_WRONLY | O_CREAT | O_TRUNC);
++	if (!vf) {
++		fprintf(stderr, "gba-diorama: could not open %s\n", path);
++		return false;
++	}
++	ssize_t written = vf->write(vf, data, size);
++	vf->close(vf);
++	if (written != (ssize_t) size) {
++		fprintf(stderr, "gba-diorama: short write to %s\n", path);
++		return false;
++	}
++	return true;
++}
++
++static bool _readLayer(GLuint fbo, int width, int height, uint8_t* out) {
++	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
++	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
++	if (status != GL_FRAMEBUFFER_COMPLETE) {
++		fprintf(stderr, "gba-diorama: FBO %u incomplete: 0x%04X\n", fbo, status);
++		return false;
++	}
++	while (glGetError() != GL_NO_ERROR) {
++	}
++	glPixelStorei(GL_PACK_ALIGNMENT, 1);
++	glPixelStorei(GL_PACK_ROW_LENGTH, 0);
++	glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, out);
++	GLenum error = glGetError();
++	if (error != GL_NO_ERROR) {
++		fprintf(stderr, "gba-diorama: readback from FBO %u failed: 0x%04X\n", fbo, error);
++		return false;
++	}
++
++	/* OpenGL framebuffers are bottom-up; the lab loader expects top-down. */
++	int stride = width * 4;
++	uint8_t* row = malloc(stride);
++	if (!row) {
++		return false;
++	}
++	int y;
++	for (y = 0; y < height / 2; ++y) {
++		uint8_t* top = out + y * stride;
++		uint8_t* bottom = out + (height - 1 - y) * stride;
++		memcpy(row, top, stride);
++		memcpy(top, bottom, stride);
++		memcpy(bottom, row, stride);
++	}
++	free(row);
++	return true;
++}
++
++static bool _dumpLayer(const char* dir, const char* name, GLuint fbo, int width, int height) {
++	size_t size = (size_t) width * height * 4;
++	uint8_t* pixels = malloc(size);
++	if (!pixels) {
++		return false;
++	}
++	bool ok = _readLayer(fbo, width, height, pixels);
++	if (ok) {
++		ok = _writeFile(dir, name, pixels, size);
++	}
++	free(pixels);
++	return ok;
++}
++
++void GBADioramaDumpFrame(struct GBAVideoGLRenderer* renderer) {
++	static unsigned frame;
++	static bool done;
++
++	if (done) {
++		return;
++	}
++
++	const char* dir = getenv("GBA_DIORAMA_DUMP_DIR");
++	if (!dir || !*dir) {
++		++frame;
++		return;
++	}
++
++	unsigned target = DIORAMA_DUMP_DEFAULT_FRAME;
++	const char* frameEnv = getenv("GBA_DIORAMA_DUMP_FRAME");
++	if (frameEnv && *frameEnv) {
++		char* end = NULL;
++		unsigned long value = strtoul(frameEnv, &end, 0);
++		if (end && *end == '\0') {
++			target = (unsigned) value;
++		}
++	}
++
++	if (frame++ != target) {
++		return;
++	}
++	done = true;
++
++	int width = GBA_VIDEO_HORIZONTAL_PIXELS * renderer->scale;
++	int height = GBA_VIDEO_VERTICAL_PIXELS * renderer->scale;
++	int mode = GBARegisterDISPCNTGetMode(renderer->dispcnt);
++	int i;
++
++	char json[8192];
++	int offset = snprintf(json, sizeof(json),
++		"{\n"
++		"  \"format\": \"gba-diorama-dump\",\n"
++		"  \"version\": 1,\n"
++		"  \"frame\": %u,\n"
++		"  \"scale\": %d,\n"
++		"  \"screen\": [%d, %d],\n"
++		"  \"layer_size\": [%d, %d],\n"
++		"  \"flip_y\": false,\n"
++		"  \"dispcnt\": %u,\n"
++		"  \"mode\": %d,\n"
++		"  \"blda\": %u,\n"
++		"  \"bldb\": %u,\n"
++		"  \"bldy\": %u,\n"
++		"  \"bg\": [\n",
++		frame - 1, renderer->scale,
++		GBA_VIDEO_HORIZONTAL_PIXELS, GBA_VIDEO_VERTICAL_PIXELS,
++		width, height,
++		(unsigned) renderer->dispcnt, mode,
++		(unsigned) renderer->blda, (unsigned) renderer->bldb, (unsigned) renderer->bldy);
++	if (offset < 0 || (size_t) offset >= sizeof(json)) {
++		fprintf(stderr, "gba-diorama: metadata buffer overflow\n");
++		return;
++	}
++
++	for (i = 0; i < 4; ++i) {
++		struct GBAVideoGLBackground* bg = &renderer->bg[i];
++		bool affine = (mode == 1 && i == 2) || (mode == 2 && i >= 2);
++		bool enabled = !!(renderer->dispcnt >> (8 + i) & 1);
++		offset += snprintf(json + offset, sizeof(json) - offset,
++			"    {\"index\": %d, \"enabled\": %s, \"priority\": %u, "
++			"\"char_base\": %u, \"screen_base\": %u, \"size\": %d, "
++			"\"bpp\": %d, \"scroll\": [%u, %u], \"affine\": %s}%s\n",
++			i, enabled ? "true" : "false", bg->priority,
++			bg->charBase, bg->screenBase, bg->size,
++			bg->multipalette ? 8 : 4, bg->x, bg->y,
++			affine ? "true" : "false", i == 3 ? "" : ",");
++		if (offset < 0 || (size_t) offset >= sizeof(json)) {
++			fprintf(stderr, "gba-diorama: metadata buffer overflow\n");
++			return;
++		}
++	}
++
++	offset += snprintf(json + offset, sizeof(json) - offset, "  ]\n}\n");
++	if (offset < 0 || (size_t) offset >= sizeof(json)) {
++		fprintf(stderr, "gba-diorama: metadata buffer overflow\n");
++		return;
++	}
++
++	if (!_writeFile(dir, "meta.json", json, (size_t) offset)) {
++		return;
++	}
++	if (renderer->d.vram) {
++		_writeFile(dir, "vram.bin", renderer->d.vram, 0x18000);
++	}
++	if (renderer->d.palette) {
++		_writeFile(dir, "palette.bin", renderer->d.palette, 0x400);
++	}
++	if (renderer->d.oam) {
++		_writeFile(dir, "oam.bin", renderer->d.oam, 0x400);
++	}
++
++	for (i = 0; i < 4; ++i) {
++		char name[16];
++		snprintf(name, sizeof(name), "bg%d.rgba", i);
++		if (!_dumpLayer(dir, name, renderer->bg[i].fbo, width, height)) {
++			fprintf(stderr, "gba-diorama: failed to dump BG%d\n", i);
++		}
++	}
++	if (!_dumpLayer(dir, "obj.rgba", renderer->fbo[GBA_GL_FBO_OBJ], width, height)) {
++		fprintf(stderr, "gba-diorama: failed to dump OBJ\n");
++	}
++
++	glBindFramebuffer(GL_FRAMEBUFFER, 0);
++	fprintf(stderr, "gba-diorama: dumped frame %u to %s (%dx%d)\n", frame - 1, dir, width, height);
++}
++
++#endif
+diff --git a/src/gba/renderers/gl.c b/src/gba/renderers/gl.c
+index 5b4ef70..c33c059 100644
+--- a/src/gba/renderers/gl.c
++++ b/src/gba/renderers/gl.c
+@@ -1574,6 +1574,7 @@ void GBAVideoGLRendererFinishFrame(struct GBAVideoRenderer* renderer) {
+ 	struct GBAVideoGLRenderer* glRenderer = (struct GBAVideoGLRenderer*) renderer;
+ 	_drawScanlines(glRenderer, GBA_VIDEO_VERTICAL_PIXELS - 1);
+ 	_finalizeLayers(glRenderer);
++	GBADioramaDumpFrame(glRenderer);
+ 	glDisable(GL_SCISSOR_TEST);
+ 	glBindVertexArray(0);
+ 	glRenderer->firstAffine = -1;

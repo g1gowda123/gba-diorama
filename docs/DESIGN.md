@@ -92,7 +92,8 @@ Matching order:
 1. Exact ROM hash override (optional, user-supplied).
 2. Game code (`mGameInfo.code`, e.g. `BPEE`) + scene signature.
 3. Base-game profile for romhacks with the same code.
-4. Generic fallback: BG3 ground, BG2/BG1 stacked, BG0 UI, mild camera.
+4. Generic fallback: choose the ground from alpha coverage × tile variety,
+   stack layers in front of it, keep BG0 UI flat, mild camera.
 
 Profiles should be hot-reloadable while the emulator runs. A debug overlay
 should let the user cycle layer roles and heights live; that is faster than

@@ -1,15 +1,20 @@
 # Agent handoff
 
-This repo is an experimental 3D2D renderer lab for GBA-era games. The current
-milestone is an offline synthetic demo; the next milestone is a real mGBA layer
-dump. Read `README.md`, `docs/DESIGN.md`, and `docs/MGBA-HANDOFF.md` before
-changing architecture.
+This repo is an experimental 3D2D renderer lab for GBA-era games. M1 is done:
+the mGBA GL layer-dump patch works and a real Emerald Route 101 frame renders
+through the offline mesher. The next milestone is profiles, then the world
+atlas/parallax depth. Read `README.md`, `docs/DESIGN.md`, and
+`docs/MGBA-HANDOFF.md` before changing architecture.
 
 ## Commands
 
 ```bash
 python -m pytest -q
 python -m gba_diorama --out docs/images/demo.png
+python -m gba_diorama --dump path/to/dump \
+    --out docs/images/emerald-route101.png
+python -m gba_diorama --dump path/to/dump --all-layers \
+    --out /tmp/all-layers.png
 python -m gba_diorama --yaw 18 --width 1920 --height 1080 --out /tmp/yaw18.png
 ```
 
@@ -30,23 +35,26 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
    scene.
 6. **No ROMs/game assets in git.** Create synthetic fixtures instead.
 
-## Current state (M0)
+## Current state (M1)
 
 - `gba.py`: 4bpp/8bpp text BG decode, palette, OAM entry decode. Affine/bitmap
   modes are rejected on purpose.
 - `dump.py`: loads/exports the mGBA dump format, decodes tilemaps from VRAM,
-  and provides a `DumpWorld` adapter.
+  and provides a `DumpWorld` adapter. Ground selection scores BG1–BG3 by alpha
+  coverage × tile variety, extrudes only layers in front of the ground, and
+  crops visible OAM entries from the composited OBJ layer.
 - `inspect.py`: `python -m gba_diorama.inspect <dump> --out <dir>` writes layer
   PNGs.
 - `synthetic.py`: 64×64 synthetic overworld, real GBA VRAM/tilemaps, decoded
   layers 1/2/3, heights/materials/sprites.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
-  sprite billboards + shadows.
+  sprite billboards + shadows; non-square maps keep square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
-- `pipeline.py` / `__main__.py`: camera + CLI.
-- `tests/`: 15 tests covering decode, dump round-trip, mesh, render, post,
+- `pipeline.py` / `__main__.py`: demo/dump cameras + CLI (`--dump`,
+  `--all-layers`).
+- `tests/`: 16 tests covering decode, dump round-trip, mesh, render, post,
   determinism.
 
 ## Next tasks (in order)
@@ -55,14 +63,14 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
    (game code + scene signature). Implement the schema in `docs/DESIGN.md`.
 2. **Parallax depth / world atlas.** Implement E1/E2 in
    `docs/EXPERIMENTS.md`; expose a confidence value and fallback. This is what
-   turns a 512×512 synthetic map into a real screen-space dump.
-3. **mGBA dump hook.** Patch `GBAVideoGLRendererFinishFrame()` behind
-   `GBA_DIORAMA_DUMP`; capture the layer textures and registers.
-4. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
+   turns a screen-space dump into a real world, and it should replace the
+   temporary sparse-overlay skip.
+3. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
    fallback, add resize/deinit hooks.
-5. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM and replace the
-   procedural stand-ins.
-6. **Height heuristics.** Implement E4 once real dumps are available.
+4. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM instead of cropping
+   the composited OBJ layer.
+5. **Height heuristics.** Implement E4: tile classification, canopy vs. building,
+   and collision-learned heights.
 
 ## Style
 
@@ -84,4 +92,11 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   BG needs four 0x800 screen blocks (0x2000 total); bases must be spaced by 4
   map slots, and the 5-bit BGxCNT field maxes out at 31. The synthetic fixture
   puts BG1's map at 20 (0xA000) because 32 is unaddressable.
-- If sprites are missing, check `sprite.kind` matches a key in `sprite_tex`.
+- If sprites are missing, check `sprite.kind` matches a key in `sprite_tex`, or
+  that the dump's `obj.rgba` has visible OAM entries.
+- If a real dump renders as a flat checkerboard, the ground picker chose a
+  low-detail backdrop. Check each BG's alpha coverage and unique 8×8 tiles, and
+  add a profile override once profiles exist.
+- If foreground layers become floating boxes, they are sparse detail layers
+  being extruded. They are skipped by default in `render_dump`; use
+  `--all-layers` only for debugging.

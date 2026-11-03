@@ -13,6 +13,16 @@ The image above is generated entirely by this repo from a synthetic
 GBA-format world: four 4bpp text-BG tilemaps, a 64×64 metatile map, extruded
 terrain, billboard characters, contact shadows, and a CPU post stack.
 
+The first real result comes from an mGBA dump of Pokémon Emerald's Route 101:
+
+![Emerald Route 101 as a 3D2D diorama](docs/images/emerald-route101.png)
+
+The dump loader picked BG2 as the ground from layer content (BG3 is a
+low-detail backdrop in this scene), cropped the player out of the OBJ layer,
+and rendered it as a billboard on a tilted plinth. Sparse foreground layers are
+skipped by default until height inference can separate tree canopies from
+buildings; `--all-layers` shows the naive extrusion.
+
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
 
@@ -64,7 +74,13 @@ python -m gba_diorama --no-post --out /tmp/raw.png
 # Higher-resolution render
 python -m gba_diorama --width 1920 --height 1080 --out /tmp/1080p.png
 
-# Inspect a real mGBA dump (once the dump hook exists)
+# Render a real mGBA dump produced by patches/mgba-diorama-dump.patch
+python -m gba_diorama --dump path/to/dump --out /tmp/dump.png
+
+# Show every BG overlay, even sparse foreground layers
+python -m gba_diorama --dump path/to/dump --all-layers --out /tmp/all-layers.png
+
+# Inspect a real mGBA dump
 python -m gba_diorama.inspect path/to/dump --out /tmp/dump-layers
 ```
 
@@ -104,8 +120,11 @@ GBA tilemaps into a 0x18000-byte VRAM buffer and decodes them back through
 | BG0 | UI / textbox | flat 2D overlay (not in the demo yet) |
 | OBJ | characters / props | camera-facing billboards + shadows |
 
-The synthetic world authors heights and materials directly. The next step is to
-infer them (see `docs/EXPERIMENTS.md`).
+Those are priors, not rules. Route 101 uses BG2 as the ground because BG3 is a
+low-detail backdrop; `DumpWorld` scores each layer by alpha coverage and tile
+variety and only extrudes layers in front of the winner. The synthetic world
+authors heights and materials directly. The next step is to infer them (see
+`docs/EXPERIMENTS.md`).
 
 ### Coordinate system
 
@@ -130,14 +149,19 @@ off-screen map data too badly.
 - CPU post stack: bloom, tilt-shift DOF, vignette, grade.
 - A loader/exporter for the mGBA dump format plus `python -m gba_diorama.inspect`
   to write layer PNGs from a dump.
-- Deterministic CLI and 15 tests.
+- Real mGBA dump rendering: content-based ground selection, non-square world
+  extents, and OBJ-layer sprites cropped from OAM entries.
+- Deterministic CLI and 16 tests.
 
 ## What is not done yet
 
-- No mGBA integration yet. The lab currently renders the synthetic world.
+- No in-emulator 3D pass yet. The mGBA dump hook exists as a patch; the lab
+  renders both the synthetic world and real dumps offline.
 - No affine BG, bitmap BG, windows, mosaic, or GBA alpha/brightness effects.
-- Sprites are procedural placeholders; OAM/OBJ tile decoding is only a
-  primitive, not a full OBJ renderer.
+- Real sprites are cropped from the composited OBJ layer; OAM/OBJ tile decoding
+  is still a primitive, not a full per-sprite renderer.
+- Sparse foreground layers are skipped by default until height inference can
+  tell tree canopies from buildings.
 - No scene detection or profile system yet.
 - No temporal world atlas; the camera is intentionally mild so missing
   off-screen pixels are not obvious.
@@ -162,7 +186,7 @@ tests/           decoder, dump, mesh, raster, pipeline tests
 docs/
   DESIGN.md      deeper architecture and rendering notes
   EXPERIMENTS.md experiments E1–E7, hypotheses and order
-  MGBA-HANDOFF.md exact mGBA hooks and dump format
+  MGBA-HANDOFF.md exact mGBA hooks, patch, and dump format
 AGENTS.md        handoff notes for the next agent
 ```
 
@@ -171,11 +195,12 @@ AGENTS.md        handoff notes for the next agent
 **M0 — offline lab (done)**
 Synthetic GBA tilemaps → decoder → heightfield diorama → post stack.
 
-**M1 — real layer dump**
-The lab side is in place: `dump.py` reads the format, and `inspect.py` writes
-per-layer PNGs. Next, add the opt-in dump hook to mGBA's GL renderer. Export
-BG0–BG3, OBJ, window, backdrop, BG registers, palette, OAM, and a frame id.
-Then render the same diorama from a real game frame.
+**M1 — real layer dump (done)**
+`patches/mgba-diorama-dump.patch` adds the opt-in dump hook to mGBA's GL
+renderer. It exports BG0–BG3, OBJ, VRAM, palette, OAM, registers, and a frame
+id. `dump.py` loads it, `inspect.py` writes per-layer PNGs, and
+`python -m gba_diorama --dump` meshes a real frame. Validated on Emerald Route
+101. Next: profiles, then the world atlas/parallax depth.
 
 **M2 — profiles and fallback**
 Detect scene signature from `DISPCNT`/`BGxCNT` (BG mode, enabled mask,
@@ -208,7 +233,7 @@ Fork mGBA. `GBAVideoGLRendererFinishFrame()` at
 `GBAVideoGLRendererSetScale()` at `gl.c:2149` is the resize hook. The renderer
 already has `bg[i].x/y`, `screenBase`, `charBase`, `size`, `priority`, and
 `affine`; the `GBAVideoRenderer` vtable exposes `palette`, `vram`, and `oam`.
-See `docs/MGBA-HANDOFF.md` for the exact fields and a proposed dump format.
+See `docs/MGBA-HANDOFF.md` for the exact fields and the implemented dump patch.
 
 ## Design principles
 
