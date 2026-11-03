@@ -9,6 +9,9 @@ stable anchors.
 **Status:** the Phase 1 dump hook is implemented in
 `patches/mgba-diorama-dump.patch` and has been built against mGBA Qt at
 `39a3d93`. It writes real Emerald frames that `gba_diorama.dump` can load.
+The hook supports a target frame and an on-demand `trigger` file, handles the
+BG/OBJ orientation difference, and the Python pipeline falls back to a flat 2D
+composite for menus and non-text BG modes.
 
 ## 1. Why mGBA
 
@@ -94,10 +97,17 @@ Implementation notes:
   `GBA_DIORAMA_DUMP_FRAME=120` selects the frame (default 120) and the hook
   writes once, then stops.
 - `GBA_DIORAMA_DUMP_DIR` must already exist. Use `mkdir -p` first.
+- Touch `$GBA_DIORAMA_DUMP_DIR/trigger` to capture the current frame on demand;
+  the hook removes the trigger after writing. This works after the target frame
+  has already passed.
 - Readback uses `glReadPixels` from each layer FBO, not `glGetTexImage`, so the
-  same code works on GLES3. Rows are flipped to top-down; `flip_y` is false.
+  same code works on GLES3. BG FBOs are already top-down; the OBJ FBO is
+  bottom-up and must be flipped. `flip_y` in the metadata is false because the
+  loader receives already-oriented BG images.
 - Clear stale GL errors before readback and check
   `glCheckFramebufferStatus()`; otherwise the first layer can be dropped.
+- If `renderer->scale <= 0`, the hook refuses to write a 0×0 dump and prints a
+  message asking for `-C videoScale=2`.
 - RGBA8 is enough for the lab. The lab's `Texture` expects uint8.
 - obj flags/depth, window, and backdrop are not dumped yet. Add them when the
   compositor needs them.
@@ -127,6 +137,8 @@ Implementation notes:
 - Route 101 output: `docs/images/emerald-route101.png`.
 - Sparse overlay layers are skipped by default until height inference can
   distinguish canopies from buildings; `--all-layers` forces the naive version.
+- Menus and non-text BG modes return a flat `composite_dump()` image instead of
+  a mesh; `--force-3d` overrides the fallback for debugging.
 
 ### Phase 3 — `hd2d` pass in mGBA
 
@@ -198,14 +210,27 @@ cmake --build build -j"$(nproc)"
 
 The GL renderer is only active in the Qt frontend, not the default SDL one.
 Enable **Configure → Emulation → Video → OpenGL** (`hwaccelVideo=1`) and set
-**Video scale** to 2–4 for development (1–16 supported). Then:
+**Video scale** to 2–4 for development (1–16 supported).
+
+On a GLES3-only build, Qt may select a GLES context that fails framebuffer
+creation. Force desktop GL:
 
 ```bash
-mkdir -p /tmp/emerald-dump
-GBA_DIORAMA_DUMP_DIR=/tmp/emerald-dump \
-GBA_DIORAMA_DUMP_FRAME=120 \
-build/qt/mgba-qt -C hwaccelVideo=1 -C videoScale=2 /path/to/emerald.gba
+QT_OPENGL=desktop QT_QPA_PLATFORM=wayland \
+build/qt/mgba-qt -C hwaccelVideo=1 -C videoScale=2 -C mute=1 \
+  -t /path/to/state.ss1 /path/to/emerald.gba
 ```
+
+The repo launcher wraps this, uses a permanent ROM path, creates the dump
+directory, and enables the target frame:
+
+```bash
+tools/run-mgba-diorama.sh /path/to/emerald.gba 4800
+touch dumps/<game>/trigger   # capture the current frame on demand
+```
+
+Do not launch a ROM from `/tmp`; mGBA shows a temporary-storage warning and
+blocks input until it is dismissed.
 
 Inspect the result:
 

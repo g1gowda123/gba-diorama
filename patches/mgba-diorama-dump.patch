@@ -24,10 +24,10 @@ index 71ab7bb..a360e4f 100644
  	renderers/software-mode0.c
 diff --git a/src/gba/renderers/diorama-dump.c b/src/gba/renderers/diorama-dump.c
 new file mode 100644
-index 0000000..a2edae9
+index 0000000..d630764
 --- /dev/null
 +++ b/src/gba/renderers/diorama-dump.c
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,225 @@
 +/* Copyright (c) 2024 gba-diorama contributors
 + *
 + * This Source Code Form is subject to the terms of the Mozilla Public
@@ -68,7 +68,7 @@ index 0000000..a2edae9
 +	return true;
 +}
 +
-+static bool _readLayer(GLuint fbo, int width, int height, uint8_t* out) {
++static bool _readLayer(GLuint fbo, int width, int height, bool flipY, uint8_t* out) {
 +	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 +	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 +	if (status != GL_FRAMEBUFFER_COMPLETE) {
@@ -86,31 +86,33 @@ index 0000000..a2edae9
 +		return false;
 +	}
 +
-+	/* OpenGL framebuffers are bottom-up; the lab loader expects top-down. */
-+	int stride = width * 4;
-+	uint8_t* row = malloc(stride);
-+	if (!row) {
-+		return false;
++	/* BG FBOs are already top-down; the OBJ FBO is bottom-up. */
++	if (flipY) {
++		int stride = width * 4;
++		uint8_t* row = malloc(stride);
++		if (!row) {
++			return false;
++		}
++		int y;
++		for (y = 0; y < height / 2; ++y) {
++			uint8_t* top = out + y * stride;
++			uint8_t* bottom = out + (height - 1 - y) * stride;
++			memcpy(row, top, stride);
++			memcpy(top, bottom, stride);
++			memcpy(bottom, row, stride);
++		}
++		free(row);
 +	}
-+	int y;
-+	for (y = 0; y < height / 2; ++y) {
-+		uint8_t* top = out + y * stride;
-+		uint8_t* bottom = out + (height - 1 - y) * stride;
-+		memcpy(row, top, stride);
-+		memcpy(top, bottom, stride);
-+		memcpy(bottom, row, stride);
-+	}
-+	free(row);
 +	return true;
 +}
 +
-+static bool _dumpLayer(const char* dir, const char* name, GLuint fbo, int width, int height) {
++static bool _dumpLayer(const char* dir, const char* name, GLuint fbo, int width, int height, bool flipY) {
 +	size_t size = (size_t) width * height * 4;
 +	uint8_t* pixels = malloc(size);
 +	if (!pixels) {
 +		return false;
 +	}
-+	bool ok = _readLayer(fbo, width, height, pixels);
++	bool ok = _readLayer(fbo, width, height, flipY, pixels);
 +	if (ok) {
 +		ok = _writeFile(dir, name, pixels, size);
 +	}
@@ -121,10 +123,6 @@ index 0000000..a2edae9
 +void GBADioramaDumpFrame(struct GBAVideoGLRenderer* renderer) {
 +	static unsigned frame;
 +	static bool done;
-+
-+	if (done) {
-+		return;
-+	}
 +
 +	const char* dir = getenv("GBA_DIORAMA_DUMP_DIR");
 +	if (!dir || !*dir) {
@@ -142,10 +140,34 @@ index 0000000..a2edae9
 +		}
 +	}
 +
-+	if (frame++ != target) {
++	/* Touch $GBA_DIORAMA_DUMP_DIR/trigger to capture the current frame
++	 * without restarting the emulator.  This is how menu/battle states are
++	 * captured after the initial frame target has already passed. */
++	char triggerPath[DIORAMA_PATH_MAX];
++	int triggerLen = snprintf(triggerPath, sizeof(triggerPath), "%s/trigger", dir);
++	bool triggered = false;
++	if (triggerLen > 0 && (size_t) triggerLen < sizeof(triggerPath)) {
++		struct VFile* trigger = VFileOpen(triggerPath, O_RDONLY);
++		if (trigger) {
++			trigger->close(trigger);
++			triggered = true;
++			remove(triggerPath);
++		}
++	}
++
++	if (done && !triggered) {
 +		return;
 +	}
-+	done = true;
++	if (!triggered && frame++ != target) {
++		return;
++	}
++	if (renderer->scale <= 0) {
++		fprintf(stderr, "gba-diorama: renderer scale is %d; launch with -C videoScale=2\n", renderer->scale);
++		return;
++	}
++	if (!triggered) {
++		done = true;
++	}
 +
 +	int width = GBA_VIDEO_HORIZONTAL_PIXELS * renderer->scale;
 +	int height = GBA_VIDEO_VERTICAL_PIXELS * renderer->scale;
@@ -218,11 +240,11 @@ index 0000000..a2edae9
 +	for (i = 0; i < 4; ++i) {
 +		char name[16];
 +		snprintf(name, sizeof(name), "bg%d.rgba", i);
-+		if (!_dumpLayer(dir, name, renderer->bg[i].fbo, width, height)) {
++		if (!_dumpLayer(dir, name, renderer->bg[i].fbo, width, height, false)) {
 +			fprintf(stderr, "gba-diorama: failed to dump BG%d\n", i);
 +		}
 +	}
-+	if (!_dumpLayer(dir, "obj.rgba", renderer->fbo[GBA_GL_FBO_OBJ], width, height)) {
++	if (!_dumpLayer(dir, "obj.rgba", renderer->fbo[GBA_GL_FBO_OBJ], width, height, true)) {
 +		fprintf(stderr, "gba-diorama: failed to dump OBJ\n");
 +	}
 +

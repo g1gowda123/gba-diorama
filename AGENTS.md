@@ -1,10 +1,11 @@
 # Agent handoff
 
 This repo is an experimental 3D2D renderer lab for GBA-era games. M1 is done:
-the mGBA GL layer-dump patch works and a real Emerald Route 101 frame renders
-through the offline mesher. The next milestone is profiles, then the world
-atlas/parallax depth. Read `README.md`, `docs/DESIGN.md`, and
-`docs/MGBA-HANDOFF.md` before changing architecture.
+the mGBA GL layer-dump patch works, a real Emerald Route 101 frame renders
+through the offline mesher, and menus/non-text modes fall back to a flat 2D
+composite. The next milestone is profiles, then the world atlas/parallax depth.
+Read `README.md`, `docs/DESIGN.md`, and `docs/MGBA-HANDOFF.md` before changing
+architecture.
 
 ## Commands
 
@@ -15,7 +16,13 @@ python -m gba_diorama --dump path/to/dump \
     --out docs/images/emerald-route101.png
 python -m gba_diorama --dump path/to/dump --all-layers \
     --out /tmp/all-layers.png
+python -m gba_diorama --dump path/to/dump --force-3d \
+    --out /tmp/ui-3d.png
 python -m gba_diorama --yaw 18 --width 1920 --height 1080 --out /tmp/yaw18.png
+
+# Launch the patched mGBA GL renderer (desktop GL, 2x, muted)
+tools/run-mgba-diorama.sh /path/to/game.gba 4800
+touch dumps/<game>/trigger   # capture the current frame on demand
 ```
 
 Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
@@ -52,10 +59,11 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
-- `pipeline.py` / `__main__.py`: demo/dump cameras + CLI (`--dump`,
-  `--all-layers`).
-- `tests/`: 16 tests covering decode, dump round-trip, mesh, render, post,
-  determinism.
+- `pipeline.py` / `__main__.py`: demo/dump cameras, 2D UI fallback, and CLI
+  (`--dump`, `--all-layers`, `--force-3d`).
+- `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
+- `tests/`: 20 tests covering decode, dump round-trip, mesh, render, post,
+  fallback, determinism.
 
 ## Next tasks (in order)
 

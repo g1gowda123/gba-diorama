@@ -94,10 +94,58 @@ class DemoResult:
 @dataclass
 class DumpResult:
     image: np.ndarray
-    scene: Scene
-    world: DumpWorld
-    camera: Camera
+    scene: Scene | None
+    world: DumpWorld | None
+    camera: Camera | None
     dump: GbaDump
+    fallback: bool = False
+    reason: str | None = None
+
+
+def _resize_nearest(image: np.ndarray, width: int, height: int) -> np.ndarray:
+    src_h, src_w = image.shape[:2]
+    ys = np.arange(height, dtype=np.int64) * src_h // height
+    xs = np.arange(width, dtype=np.int64) * src_w // width
+    return image[ys][:, xs]
+
+
+def composite_dump(dump: GbaDump, width: int, height: int) -> np.ndarray:
+    """Flatten BG3..BG0 + OBJ for scenes that must stay 2D (menus, battles)."""
+
+    sizes = [layer.shape[:2] for layer in dump.layers.values()]
+    if dump.obj is not None:
+        sizes.append(dump.obj.shape[:2])
+    if not sizes:
+        raise ValueError("dump has no layers")
+    src_h, src_w = sizes[0]
+    out = np.zeros((src_h, src_w, 4), dtype=np.float32)
+    if dump.backdrop is not None and dump.backdrop.shape[:2] == (src_h, src_w):
+        out[..., :3] = dump.backdrop[..., :3].astype(np.float32)
+    out[..., 3] = 255.0
+
+    for index in (3, 2, 1, 0):
+        layer = dump.layers.get(index)
+        if layer is None:
+            continue
+        alpha = layer[..., 3:4].astype(np.float32) / 255.0
+        out[..., :3] = layer[..., :3] * alpha + out[..., :3] * (1.0 - alpha)
+    if dump.obj is not None:
+        alpha = dump.obj[..., 3:4].astype(np.float32) / 255.0
+        out[..., :3] = dump.obj[..., :3] * alpha + out[..., :3] * (1.0 - alpha)
+
+    return _resize_nearest(np.clip(out[..., :3], 0, 255).astype(np.uint8), width, height)
+
+
+def _ui_fallback_reason(dump: GbaDump, ui_coverage: float = 0.05) -> str | None:
+    mode = int(dump.meta.get("mode", 0))
+    if mode != 0:
+        return f"mode {mode} is not text-mode 0"
+    bg0 = dump.layers.get(0)
+    if bg0 is not None and bg0.size:
+        coverage = float((bg0[..., 3] > 0).mean())
+        if coverage >= ui_coverage:
+            return f"BG0 UI covers {coverage:.1%}"
+    return None
 
 
 def render_demo(
@@ -130,10 +178,26 @@ def render_dump(
     yaw_deg: float = 0.0,
     post: bool = True,
     all_layers: bool = False,
+    force_3d: bool = False,
 ) -> DumpResult:
     """Render a real mGBA dump through the same mesher as the synthetic demo."""
 
     dump = load_dump(root)
+    reason = None if force_3d else _ui_fallback_reason(dump)
+    if reason:
+        image = composite_dump(dump, width, height)
+        if post:
+            image = apply_post(image)
+        return DumpResult(
+            image=image,
+            scene=None,
+            world=None,
+            camera=None,
+            dump=dump,
+            fallback=True,
+            reason=reason,
+        )
+
     world = DumpWorld.from_dump(
         dump,
         min_overlay_coverage=0.0 if all_layers else 0.05,

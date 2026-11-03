@@ -80,9 +80,26 @@ python -m gba_diorama --dump path/to/dump --out /tmp/dump.png
 # Show every BG overlay, even sparse foreground layers
 python -m gba_diorama --dump path/to/dump --all-layers --out /tmp/all-layers.png
 
+# Force the 3D path for a UI scene (debugging only)
+python -m gba_diorama --dump path/to/dump --force-3d --out /tmp/ui-3d.png
+
 # Inspect a real mGBA dump
 python -m gba_diorama.inspect path/to/dump --out /tmp/dump-layers
 ```
+
+To capture a frame from mGBA's OpenGL renderer, apply
+`patches/mgba-diorama-dump.patch` to mGBA `39a3d93`, build the Qt frontend, then:
+
+```bash
+tools/run-mgba-diorama.sh /path/to/game.gba 4800
+# later, while the game is running:
+touch dumps/<game>/trigger
+```
+
+The launcher selects desktop OpenGL (`QT_OPENGL=desktop`), enables the GL
+renderer at 2× scale, and starts muted. It uses a permanent ROM path so mGBA
+does not show the temporary-storage warning. The dump hook writes BG0–BG3,
+OBJ, VRAM, palette, OAM, and registers; `trigger` captures on demand.
 
 ## How it works
 
@@ -151,7 +168,11 @@ off-screen map data too badly.
   to write layer PNGs from a dump.
 - Real mGBA dump rendering: content-based ground selection, non-square world
   extents, and OBJ-layer sprites cropped from OAM entries.
-- Deterministic CLI and 16 tests.
+- A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
+  it for debugging.
+- Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
+  handling for the mGBA patch.
+- Deterministic CLI and 20 tests.
 
 ## What is not done yet
 

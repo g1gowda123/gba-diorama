@@ -32,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dump", type=Path, help="mGBA dump directory (meta.json etc.)")
     parser.add_argument("--out", type=Path, help="output PNG (default: docs/images/demo.png)")
     parser.add_argument("--all-layers", action="store_true", help="extrude even sparse overlay BGs")
+    parser.add_argument("--force-3d", action="store_true", help="mesh even UI scenes instead of 2D fallback")
     parser.add_argument("--no-post", action="store_true", help="skip bloom/tilt-shift/grade")
     args = parser.parse_args(argv)
 
@@ -46,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
             yaw_deg=args.yaw,
             post=not args.no_post,
             all_layers=args.all_layers,
+            force_3d=args.force_3d,
         )
         source = f"dump={args.dump}"
     else:
@@ -63,11 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     Image.fromarray(result.image).save(out)
 
     print(f"wrote {out}")
-    print(
-        f"resolution={args.width}x{args.height} {source} yaw={args.yaw:.1f} "
-        f"triangles={len(result.scene.triangles)}"
-    )
-    print(f"layers={result.scene.layers}")
+    if result.fallback:
+        print(f"resolution={args.width}x{args.height} {source} fallback=2D ({result.reason})")
+    else:
+        assert result.scene is not None
+        print(
+            f"resolution={args.width}x{args.height} {source} yaw={args.yaw:.1f} "
+            f"triangles={len(result.scene.triangles)}"
+        )
+        print(f"layers={result.scene.layers}")
     return 0
 
 
