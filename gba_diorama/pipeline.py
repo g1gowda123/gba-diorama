@@ -11,6 +11,7 @@ import numpy as np
 from .atlas import AtlasResult, stitch_paths
 from .dump import DumpWorld, GbaDump, load_dump
 from .mesh import Scene, build_scene, scene_extent
+from .parallax import estimate_parallax_paths
 from .post import apply_post
 from .profiles import ProfileBook, SceneProfile, SceneSignature
 from .raster import Camera, render
@@ -297,6 +298,7 @@ def render_atlas(
         min_overlay_coverage=0.0 if all_layers else 0.05,
         profile=profile,
     )
+    atlas.parallax = estimate_parallax_paths(roots, world.ground_layer)
     camera = dump_camera(world, width, height, yaw_deg, profile=profile)
     scene = build_scene(world, camera)
     image = render(

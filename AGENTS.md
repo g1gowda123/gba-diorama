@@ -88,8 +88,9 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 1. **World atlas sequence capture + invalidation.** `atlas.py` stitches
    offline dumps and records coverage, but it needs VRAM-change invalidation
    and an mGBA sequence mode before it can replace the sparse-overlay skip.
-   `parallax.py` estimates E2 ratios; the next step is wiring those estimates
-   into overlay heights/profiles with a confidence fallback.
+   `parallax.py` estimates E2 ratios and `--atlas` prints them; the next step
+   is wiring those estimates into overlay heights/profiles with a confidence
+   fallback.
 2. **Profile discovery/debug UI.** Auto-load a profile directory, show the
    current signature and chosen profile, and add a hotkey/overlay to cycle layer
    roles and heights. Camera overrides (`distance`, `pitch_deg`, `yaw_deg`) are

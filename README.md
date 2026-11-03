@@ -172,10 +172,11 @@ positions:
 python -m gba_diorama --atlas dumps/route-a dumps/route-b --out /tmp/atlas.png
 ```
 
-The atlas is still offline. It records a per-layer coverage mask, but does not
-yet invalidate regions when VRAM changes or capture a sequence automatically;
-those are the next steps before it can replace the temporary sparse-overlay
-skip.
+The atlas is still offline. It records a per-layer coverage mask, and
+`--atlas` prints the E2 scroll-ratio/confidence estimate for each layer, but it
+does not yet invalidate regions when VRAM changes or capture a sequence
+automatically; those are the next steps before it can replace the temporary
+sparse-overlay skip.
 
 ## What works
 

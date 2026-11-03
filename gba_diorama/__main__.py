@@ -106,6 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"signature={signature}")
         print(f"layers={result.scene.layers}")
+        if result.atlas is not None and result.atlas.parallax:
+            estimates = []
+            for index, estimate in sorted(result.atlas.parallax.items()):
+                factor = "?" if estimate.factor is None else f"{estimate.factor:.2f}"
+                estimates.append(f"BG{index}:{factor}({estimate.confidence:.2f})")
+            print(f"parallax={', '.join(estimates)}")
     return 0
 
 

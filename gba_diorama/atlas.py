@@ -16,6 +16,7 @@ from typing import Sequence
 import numpy as np
 
 from .dump import GbaDump, layer_scroll, load_dump
+from .parallax import ParallaxEstimate
 
 
 @dataclass
@@ -25,6 +26,7 @@ class AtlasResult:
     origin: tuple[int, int]
     layer_bounds: dict[int, tuple[int, int, int, int]]
     coverage: dict[int, np.ndarray]
+    parallax: dict[int, ParallaxEstimate] | None = None
 
     @property
     def coverage_ratio(self) -> dict[int, float]:
