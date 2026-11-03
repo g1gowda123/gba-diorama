@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .atlas import AtlasResult, stitch_paths
 from .dump import DumpWorld, GbaDump, load_dump
 from .mesh import Scene, build_scene, scene_extent
 from .post import apply_post
@@ -114,6 +115,7 @@ class DumpResult:
     reason: str | None = None
     profile: SceneProfile | None = None
     signature: SceneSignature | None = None
+    atlas: AtlasResult | None = None
 
 
 def _resize_nearest(image: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -247,4 +249,73 @@ def render_dump(
         dump=dump,
         profile=profile,
         signature=signature,
+    )
+
+
+def render_atlas(
+    roots: list[str | Path],
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    yaw_deg: float = 0.0,
+    post: bool = True,
+    all_layers: bool = False,
+    force_3d: bool = False,
+    profile: SceneProfile | None = None,
+    profile_path: str | Path | None = None,
+    layer_indices: tuple[int, ...] = (1, 2, 3),
+) -> DumpResult:
+    """Stitch several dumps into a world atlas, then render it like one dump."""
+
+    atlas = stitch_paths(roots, layer_indices=layer_indices)
+    dump = atlas.dump
+    signature = SceneSignature.from_meta(dump.meta)
+    if profile is None and profile_path is not None:
+        profile = ProfileBook.from_path(profile_path).match(
+            signature, dump.game_code
+        )
+
+    reason = None if force_3d else _ui_fallback_reason(dump)
+    if reason:
+        image = composite_dump(dump, width, height)
+        if post:
+            image = apply_post(image)
+        return DumpResult(
+            image=image,
+            scene=None,
+            world=None,
+            camera=None,
+            dump=dump,
+            fallback=True,
+            reason=reason,
+            profile=profile,
+            signature=signature,
+            atlas=atlas,
+        )
+
+    world = DumpWorld.from_dump(
+        dump,
+        min_overlay_coverage=0.0 if all_layers else 0.05,
+        profile=profile,
+    )
+    camera = dump_camera(world, width, height, yaw_deg, profile=profile)
+    scene = build_scene(world, camera)
+    image = render(
+        scene.triangles,
+        camera,
+        _background(width, height),
+        fog_color=(18, 24, 40),
+        fog_start=900.0,
+        fog_end=1900.0,
+    )
+    if post:
+        image = apply_post(image)
+    return DumpResult(
+        image=image,
+        scene=scene,
+        world=world,
+        camera=camera,
+        dump=dump,
+        profile=profile,
+        signature=signature,
+        atlas=atlas,
     )

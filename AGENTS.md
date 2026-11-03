@@ -68,23 +68,27 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
 - `pipeline.py` / `__main__.py`: demo/dump cameras, 2D UI fallback, scene
-  signatures, and CLI (`--dump`, `--all-layers`, `--force-3d`, `--profile`).
+  signatures, and CLI (`--dump`, `--atlas`, `--all-layers`, `--force-3d`,
+  `--profile`).
+- `atlas.py`: offline E1 scaffold; stitches BG layers from several dumps at
+  their scroll offsets into a larger canvas. No coverage mask or VRAM
+  invalidation yet.
 - `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
   signature (BG2 ground, BG3 backdrop ignored, BG1 canopy deferred).
-- `tests/`: 27 tests covering decode, dump round-trip, profiles, mesh, render,
-  post, fallback, determinism.
+- `tests/`: 31 tests covering decode, dump round-trip, profiles, atlas
+  stitching, mesh, render, post, fallback, determinism.
 
 ## Next tasks (in order)
 
-1. **Profile discovery/debug UI.** Auto-load a profile directory, show the
+1. **World atlas coverage + sequence capture.** `atlas.py` stitches offline
+   dumps, but it needs a coverage mask, VRAM-change invalidation, and an mGBA
+   sequence mode before it can replace the sparse-overlay skip. Then implement
+   E2 parallax depth with a confidence value.
+2. **Profile discovery/debug UI.** Auto-load a profile directory, show the
    current signature and chosen profile, and add a hotkey/overlay to cycle layer
    roles and heights. Camera overrides (`distance`, `pitch_deg`, `yaw_deg`) are
    already implemented in `SceneProfile.camera`.
-2. **Parallax depth / world atlas.** Implement E1/E2 in
-   `docs/EXPERIMENTS.md`; expose a confidence value and fallback. This is what
-   turns a screen-space dump into a real world, and it should replace the
-   temporary sparse-overlay skip.
 3. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
    fallback, add resize/deinit hooks.
 4. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM instead of cropping

@@ -77,6 +77,9 @@ python -m gba_diorama --width 1920 --height 1080 --out /tmp/1080p.png
 # Render a real mGBA dump produced by patches/mgba-diorama-dump.patch
 python -m gba_diorama --dump path/to/dump --out /tmp/dump.png
 
+# Stitch dumps captured at different scroll positions into a larger world atlas
+python -m gba_diorama --atlas path/to/dump-a path/to/dump-b --out /tmp/atlas.png
+
 # Show every BG overlay, even sparse foreground layers
 python -m gba_diorama --dump path/to/dump --all-layers --out /tmp/all-layers.png
 
@@ -153,6 +156,22 @@ World space is `(x, height, z)`, Y up. One world unit is one GBA BG pixel. The
 synthetic map is 64×64 tiles (512×512 pixels). The camera looks down at roughly
 25–30°, which is enough to read the diorama without exposing the missing
 off-screen map data too badly.
+
+### World atlas
+
+A single dump only contains the 240×160 visible screen. Tilting the camera
+exposes the missing edges. `gba_diorama/atlas.py` starts E1: it places each BG
+layer at its scroll offset in a larger canvas and alpha-composites overlapping
+frames. Feed it several dumps of the same scene captured at different scroll
+positions:
+
+```bash
+python -m gba_diorama --atlas dumps/route-a dumps/route-b --out /tmp/atlas.png
+```
+
+The atlas is still offline and does not yet track a coverage mask or invalidate
+regions when VRAM changes. Those are the next steps before it can replace the
+temporary sparse-overlay skip.
 
 ## What works
 

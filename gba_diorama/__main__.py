@@ -18,6 +18,7 @@ from .pipeline import (
     DEFAULT_HEIGHT,
     DEFAULT_SEED,
     DEFAULT_WIDTH,
+    render_atlas,
     render_demo,
     render_dump,
 )
@@ -29,7 +30,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--yaw", type=float, default=0.0, help="camera yaw in degrees")
-    parser.add_argument("--dump", type=Path, help="mGBA dump directory (meta.json etc.)")
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument("--dump", type=Path, help="mGBA dump directory (meta.json etc.)")
+    source_group.add_argument(
+        "--atlas",
+        type=Path,
+        nargs="+",
+        metavar="DUMP",
+        help="two or more dumps to stitch into a world atlas",
+    )
     parser.add_argument("--out", type=Path, help="output PNG (default: docs/images/demo.png)")
     parser.add_argument("--all-layers", action="store_true", help="extrude even sparse overlay BGs")
     parser.add_argument("--force-3d", action="store_true", help="mesh even UI scenes instead of 2D fallback")
@@ -52,6 +61,18 @@ def main(argv: list[str] | None = None) -> int:
             profile_path=args.profile,
         )
         source = f"dump={args.dump}"
+    elif args.atlas:
+        result = render_atlas(
+            args.atlas,
+            width=args.width,
+            height=args.height,
+            yaw_deg=args.yaw,
+            post=not args.no_post,
+            all_layers=args.all_layers,
+            force_3d=args.force_3d,
+            profile_path=args.profile,
+        )
+        source = f"atlas={len(args.atlas)} dumps"
     else:
         result = render_demo(
             width=args.width,
@@ -77,9 +98,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"signature={signature}")
     else:
         assert result.scene is not None
+        atlas_info = f" atlas_frames={result.atlas.frames}" if result.atlas else ""
         print(
             f"resolution={args.width}x{args.height} {source} yaw={args.yaw:.1f} "
             f"triangles={len(result.scene.triangles)} profile={profile_name}"
+            f"{atlas_info}"
         )
         print(f"signature={signature}")
         print(f"layers={result.scene.layers}")

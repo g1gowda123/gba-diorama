@@ -139,7 +139,11 @@ renderer builds a heightfield:
 This is what `mesh.py` implements. The synthetic world authors the heights and
 materials; a real integration will infer them.
 
-### 5.3 World atlas (next)
+### 5.3 World atlas (prototype)
+
+`atlas.py` implements the offline half: it places each BG layer at its scroll
+offset in a larger canvas and composites overlapping dumps. The persistent
+in-emulator version still needs a coverage mask and invalidation.
 
 mGBA's BG textures are screen-space (240×160). A tilted camera exposes their
 edges. The fix is a persistent **world atlas**:

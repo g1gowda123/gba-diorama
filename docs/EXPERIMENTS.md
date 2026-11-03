@@ -29,8 +29,9 @@ atlas so a tilted camera does not expose missing pixels?
 **Risks:** scrolling backgrounds with wrap-around; affine layers; VRAM changes
 every frame in some effects.
 
-**Status:** next. This is the highest-value experiment because it unlocks a
-real camera.
+**Status:** prototype. `atlas.py` stitches offline dumps at their scroll
+offsets and alpha-composites overlaps; a coverage mask, VRAM invalidation, and
+mGBA sequence capture are still missing.
 
 ## E2 — Auto-depth from parallax
 
