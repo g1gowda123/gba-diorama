@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gba-diorama"
+version = "0.1.0"
+description = "Experimental 3D2D / HD-2D renderer lab for GBA games and romhacks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MPL-2.0"
+authors = [{ name = "g1gowda123" }]
+dependencies = [
+    "numpy>=1.24",
+    "pillow>=9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+gba-diorama = "gba_diorama.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["gba_diorama*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

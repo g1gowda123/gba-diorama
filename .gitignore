@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Local render output and captures
+out/
+dumps/
+*.gba
+*.agb
+*.sav
+*.srm
+*.state
+*.ss1
+*.png
+!docs/images/*.png
