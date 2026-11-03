@@ -20,6 +20,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 gba-diorama = "gba_diorama.__main__:main"
+gba-diorama-inspect = "gba_diorama.inspect:main"
 
 [tool.setuptools.packages.find]
 include = ["gba_diorama*"]

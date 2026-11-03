@@ -1,0 +1,269 @@
+"""Load/save the debug dump described in docs/MGBA-HANDOFF.md.
+
+The loader is intentionally independent of mGBA headers.  It accepts a dump
+directory and returns decoded RGBA layers, raw PPU state, and a small
+`DumpWorld` adapter that the mesher can consume once an atlas exists.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from .gba import TextBg, decode_text_bg
+
+LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
+
+
+def _parse_int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value, 0)
+    raise TypeError(f"cannot parse integer: {value!r}")
+
+
+def _load_rgba(path: Path, size: tuple[int, int] | None = None) -> np.ndarray:
+    """Load a PNG or a raw RGBA8 file.
+
+    ``size`` is (width, height) for raw files.  PNGs carry their own size.
+    """
+
+    try:
+        return np.asarray(Image.open(path).convert("RGBA"), dtype=np.uint8)
+    except Exception:
+        if size is None:
+            raise
+        width, height = size
+        raw = np.frombuffer(path.read_bytes(), dtype=np.uint8)
+        expected = width * height * 4
+        if raw.size != expected:
+            raise ValueError(
+                f"{path}: expected {expected} RGBA bytes for {width}x{height}, got {raw.size}"
+            )
+        return raw.reshape(height, width, 4).copy()
+
+
+@dataclass
+class GbaDump:
+    root: Path
+    meta: dict
+    vram: np.ndarray | None
+    palette: np.ndarray | None
+    oam: np.ndarray | None
+    layers: dict[int, np.ndarray]
+    obj: np.ndarray | None = None
+    obj_flags: np.ndarray | None = None
+    window: np.ndarray | None = None
+    backdrop: np.ndarray | None = None
+
+    @property
+    def game_code(self) -> str:
+        return str(self.meta.get("game", {}).get("code", ""))
+
+
+def load_dump(root: str | Path) -> GbaDump:
+    root = Path(root)
+    meta_path = root / "meta.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"missing {meta_path}")
+    meta = json.loads(meta_path.read_text())
+
+    vram = None
+    vram_path = root / "vram.bin"
+    if vram_path.exists():
+        vram = np.frombuffer(vram_path.read_bytes(), dtype=np.uint8)
+
+    palette = None
+    palette_path = root / "palette.bin"
+    if palette_path.exists():
+        palette = np.frombuffer(palette_path.read_bytes(), dtype=np.uint8)
+
+    oam = None
+    oam_path = root / "oam.bin"
+    if oam_path.exists():
+        oam = np.frombuffer(oam_path.read_bytes(), dtype=np.uint8)
+
+    screen = meta.get("screen", [240, 160])
+    scale = int(meta.get("scale", 1))
+    screen_size = (int(screen[0]) * scale, int(screen[1]) * scale)
+    layer_size = tuple(meta.get("layer_size", screen_size))
+    flip_y = bool(meta.get("flip_y", False))
+
+    layers: dict[int, np.ndarray] = {}
+    bgcnt = meta.get("bgcnt", [])
+    dispcnt = _parse_int(meta.get("dispcnt", 0))
+    enabled_mask = (dispcnt >> 8) & 0x0F
+    for index in (3, 2, 1, 0):
+        path = root / f"bg{index}.rgba"
+        if path.exists():
+            layers[index] = _load_rgba(path, layer_size)
+            continue
+        if enabled_mask and not (enabled_mask & (1 << index)):
+            continue
+        if vram is None or palette is None or index >= len(bgcnt):
+            continue
+        raw = _parse_int(bgcnt[index])
+        bg = TextBg(
+            char_base=(raw >> 2) & 0x03,
+            screen_base=(raw >> 8) & 0x1F,
+            size=(raw >> 14) & 0x03,
+            bpp=8 if raw & 0x80 else 4,
+            priority=raw & 0x03,
+        )
+        layers[index] = decode_text_bg(vram, palette, bg)
+
+    if flip_y:
+        layers = {index: image[::-1] for index, image in layers.items()}
+
+    obj = _optional_rgba(root / "obj.rgba", screen_size)
+    obj_flags = _optional_bytes(root / "obj_flags.bin")
+    window = _optional_rgba(root / "window.rgba", screen_size)
+    backdrop = _optional_rgba(root / "backdrop.rgba", screen_size)
+    if flip_y:
+        obj = obj[::-1] if obj is not None else None
+        window = window[::-1] if window is not None else None
+        backdrop = backdrop[::-1] if backdrop is not None else None
+    return GbaDump(
+        root=root,
+        meta=meta,
+        vram=vram,
+        palette=palette,
+        oam=oam,
+        layers=layers,
+        obj=obj,
+        obj_flags=obj_flags,
+        window=window,
+        backdrop=backdrop,
+    )
+
+
+def _optional_rgba(path: Path, size: tuple[int, int] | None = None) -> np.ndarray | None:
+    return _load_rgba(path, size) if path.exists() else None
+
+
+def _optional_bytes(path: Path) -> np.ndarray | None:
+    return np.frombuffer(path.read_bytes(), dtype=np.uint8) if path.exists() else None
+
+
+def _bgcnt(bg: TextBg) -> int:
+    return (
+        (bg.priority & 0x03)
+        | ((bg.char_base & 0x03) << 2)
+        | (0x80 if bg.bpp == 8 else 0)
+        | ((bg.screen_base & 0x1F) << 8)
+        | ((bg.size & 0x03) << 14)
+    )
+
+
+def export_synthetic_dump(
+    world,
+    root: str | Path,
+    *,
+    write_layers: bool = False,
+    flip_y: bool = False,
+) -> Path:
+    """Write the synthetic fixture in the real dump format.
+
+    This is the round-trip test for the loader: with ``write_layers=False`` the
+    loader must decode the tilemaps from VRAM exactly as it would for a game.
+    """
+
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "vram.bin").write_bytes(bytes(world.vram))
+    (root / "palette.bin").write_bytes(world.palette)
+    (root / "oam.bin").write_bytes(b"\0" * 0x400)
+
+    bgcnt = [0, 0, 0, 0]
+    for index, bg in world.bgs.items():
+        bgcnt[index] = _bgcnt(bg)
+    layer_h, layer_w = world.layers[3].shape[:2]
+    meta = {
+        "frame": 0,
+        "game": {"title": "SYNTHETIC", "code": "SYNTH", "maker": "00", "version": 0},
+        "scale": 1,
+        "screen": [240, 160],
+        "layer_size": [layer_w, layer_h],
+        "flip_y": flip_y,
+        "bgcnt": [f"0x{value:04X}" for value in bgcnt],
+        "bg_hofs": [0, 0, 0, 0],
+        "bg_vofs": [0, 0, 0, 0],
+        "dispcnt": "0x1E00",
+    }
+    (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+
+    if write_layers:
+        for index, image in world.layers.items():
+            if flip_y:
+                image = image[::-1]
+            (root / f"bg{index}.rgba").write_bytes(image.tobytes())
+    return root
+
+
+@dataclass
+class DumpWorld:
+    """Minimal SyntheticWorld-compatible adapter for a decoded dump.
+
+    Only meaningful for 512x512 maps today.  Screen-space dumps need the world
+    atlas (experiment E1) before they can be meshed at their true scale.
+    """
+
+    layers: dict[int, np.ndarray]
+    terrain_height: np.ndarray
+    ground_side_material: np.ndarray
+    layer_present: dict[int, np.ndarray]
+    layer_height: dict[int, np.ndarray]
+    layer_material: dict[int, np.ndarray]
+    layer_side_material: dict[int, np.ndarray]
+    sprites: list = field(default_factory=list)
+
+    @classmethod
+    def from_dump(cls, dump: GbaDump) -> "DumpWorld":
+        if 3 not in dump.layers:
+            raise ValueError("dump has no BG3 layer")
+        ground = dump.layers[3]
+        h, w = ground.shape[:2]
+        if h % 8 or w % 8:
+            raise ValueError(f"BG3 size {w}x{h} is not tile-aligned")
+        cells = (h // 8, w // 8)
+        terrain = np.zeros(cells, dtype=np.float32)
+        ground_side = np.full(cells, "dirt", dtype=object)
+
+        present: dict[int, np.ndarray] = {}
+        heights: dict[int, np.ndarray] = {}
+        materials: dict[int, np.ndarray] = {}
+        sides: dict[int, np.ndarray] = {}
+        for index, default_height in ((2, 6.0), (1, 18.0)):
+            image = dump.layers.get(index)
+            if image is None:
+                continue
+            if image.shape[:2] != (h, w):
+                raise ValueError(
+                    f"BG{index} size {image.shape[1]}x{image.shape[0]} does not match BG3 {w}x{h}"
+                )
+            alpha = image[..., 3].reshape(cells[0], 8, cells[1], 8).max(axis=(1, 3))
+            present[index] = alpha > 0
+            heights[index] = np.full(cells, default_height, dtype=np.float32)
+            materials[index] = np.full(cells, "", dtype=object)
+            sides[index] = np.full(cells, "stone", dtype=object)
+
+        return cls(
+            layers=dump.layers,
+            terrain_height=terrain,
+            ground_side_material=ground_side,
+            layer_present=present,
+            layer_height=heights,
+            layer_material=materials,
+            layer_side_material=sides,
+        )
+
+    def ground_height(self, x: float, z: float) -> float:
+        h, w = self.terrain_height.shape
+        tx = int(np.clip(x // 8, 0, w - 1))
+        ty = int(np.clip(z // 8, 0, h - 1))
+        return float(self.terrain_height[ty, tx])

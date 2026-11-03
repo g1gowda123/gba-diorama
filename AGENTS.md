@@ -34,6 +34,10 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 
 - `gba.py`: 4bpp/8bpp text BG decode, palette, OAM entry decode. Affine/bitmap
   modes are rejected on purpose.
+- `dump.py`: loads/exports the mGBA dump format, decodes tilemaps from VRAM,
+  and provides a `DumpWorld` adapter.
+- `inspect.py`: `python -m gba_diorama.inspect <dump> --out <dir>` writes layer
+  PNGs.
 - `synthetic.py`: 64×64 synthetic overworld, real GBA VRAM/tilemaps, decoded
   layers 1/2/3, heights/materials/sprites.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
@@ -42,25 +46,23 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
 - `pipeline.py` / `__main__.py`: camera + CLI.
-- `tests/`: 10 tests covering decode, mesh, render, post, determinism.
+- `tests/`: 15 tests covering decode, dump round-trip, mesh, render, post,
+  determinism.
 
 ## Next tasks (in order)
 
-1. **Dump loader.** Add `gba_diorama/dump.py` that reads the format in
-   `docs/MGBA-HANDOFF.md` and returns the same `SyntheticWorld`-like interface
-   (layers, present masks, heights, materials, sprites). Keep it independent of
-   mGBA headers.
-2. **Real layer inspector.** Add `python -m gba_diorama.inspect <dump>` that
-   writes `bg0.png`…`bg3.png`, `obj.png`, `window.png`, and a decoded-vs-dumped
-   diff. This validates the decoder before 3D work.
-3. **Profile system.** Add a data-only TOML profile loader with match rules
+1. **Profile system.** Add a data-only TOML profile loader with match rules
    (game code + scene signature). Implement the schema in `docs/DESIGN.md`.
-4. **Parallax depth / world atlas.** Implement E1/E2 in
-   `docs/EXPERIMENTS.md`; expose a confidence value and fallback.
-5. **mGBA dump hook.** Patch `GBAVideoGLRendererFinishFrame()` behind
+2. **Parallax depth / world atlas.** Implement E1/E2 in
+   `docs/EXPERIMENTS.md`; expose a confidence value and fallback. This is what
+   turns a 512×512 synthetic map into a real screen-space dump.
+3. **mGBA dump hook.** Patch `GBAVideoGLRendererFinishFrame()` behind
    `GBA_DIORAMA_DUMP`; capture the layer textures and registers.
-6. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
+4. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
    fallback, add resize/deinit hooks.
+5. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM and replace the
+   procedural stand-ins.
+6. **Height heuristics.** Implement E4 once real dumps are available.
 
 ## Style
 
@@ -80,5 +82,6 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   `Scene.triangles` is non-empty.
 - If BG layers look opaque/noisy, check the screen-base spacing. A 64×64 text
   BG needs four 0x800 screen blocks (0x2000 total); bases must be spaced by 4
-  map slots. This bit the synthetic fixture once.
+  map slots, and the 5-bit BGxCNT field maxes out at 31. The synthetic fixture
+  puts BG1's map at 20 (0xA000) because 32 is unaddressable.
 - If sprites are missing, check `sprite.kind` matches a key in `sprite_tex`.

@@ -443,7 +443,10 @@ def build_synthetic_world(seed: int = 7) -> SyntheticWorld:
     # so the bases must be spaced by four map slots, not one.
     bg3 = BgTiles(vram, 0, char_base=0, screen_base=24, size=3, bank=BANK_GROUND)
     bg2 = BgTiles(vram, 1, char_base=1, screen_base=28, size=3, bank=BANK_OBJECT)
-    bg1 = BgTiles(vram, 2, char_base=2, screen_base=32, size=3, bank=BANK_TOP)
+    # The 5-bit screen-base field cannot address 32, so BG1's map lives at 20
+    # (0xA000).  Its char data only uses the first few hundred bytes at 0x8000,
+    # so the two regions do not collide in practice.
+    bg1 = BgTiles(vram, 2, char_base=2, screen_base=20, size=3, bank=BANK_TOP)
 
     bg3.add_material("grass", _tile_set(_grass))
     bg3.add_material("path", _tile_set(_path))
@@ -574,7 +577,7 @@ def build_synthetic_world(seed: int = 7) -> SyntheticWorld:
     bgs = {
         3: TextBg(char_base=0, screen_base=24, size=3, bpp=4, priority=3),
         2: TextBg(char_base=1, screen_base=28, size=3, bpp=4, priority=2),
-        1: TextBg(char_base=2, screen_base=32, size=3, bpp=4, priority=1),
+        1: TextBg(char_base=2, screen_base=20, size=3, bpp=4, priority=1),
     }
     from .gba import decode_text_bg
 

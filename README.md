@@ -63,6 +63,9 @@ python -m gba_diorama --no-post --out /tmp/raw.png
 
 # Higher-resolution render
 python -m gba_diorama --width 1920 --height 1080 --out /tmp/1080p.png
+
+# Inspect a real mGBA dump (once the dump hook exists)
+python -m gba_diorama.inspect path/to/dump --out /tmp/dump-layers
 ```
 
 ## How it works
@@ -125,7 +128,9 @@ off-screen map data too badly.
 - Software 3D rasterizer: near-plane clipping, perspective-correct UVs,
   z-buffer, alpha test, alpha blending, fog.
 - CPU post stack: bloom, tilt-shift DOF, vignette, grade.
-- Deterministic CLI and 10 tests.
+- A loader/exporter for the mGBA dump format plus `python -m gba_diorama.inspect`
+  to write layer PNGs from a dump.
+- Deterministic CLI and 15 tests.
 
 ## What is not done yet
 
@@ -144,6 +149,8 @@ off-screen map data too badly.
 ```
 gba_diorama/
   gba.py         GBA text-BG / palette / OAM decoding
+  dump.py        load/export the mGBA dump format + DumpWorld adapter
+  inspect.py     dump -> per-layer PNGs
   synthetic.py   synthetic GBA-format world (the test fixture)
   mesh.py        heightfields, side walls, plinth, sprite billboards
   raster.py      software 3D rasterizer
@@ -151,7 +158,7 @@ gba_diorama/
   sprites.py     procedural pixel-art stand-ins
   pipeline.py    demo camera + render pipeline
   __main__.py    CLI
-tests/           decoder, mesh, raster, pipeline tests
+tests/           decoder, dump, mesh, raster, pipeline tests
 docs/
   DESIGN.md      deeper architecture and rendering notes
   EXPERIMENTS.md experiments E1–E7, hypotheses and order
@@ -165,9 +172,10 @@ AGENTS.md        handoff notes for the next agent
 Synthetic GBA tilemaps → decoder → heightfield diorama → post stack.
 
 **M1 — real layer dump**
-Add a debug dump to mGBA's GL renderer. Export BG0–BG3, OBJ, window, backdrop,
-BG registers, palette, OAM, and a frame id. Load the dump in the lab and render
-the same diorama from a real game frame.
+The lab side is in place: `dump.py` reads the format, and `inspect.py` writes
+per-layer PNGs. Next, add the opt-in dump hook to mGBA's GL renderer. Export
+BG0–BG3, OBJ, window, backdrop, BG registers, palette, OAM, and a frame id.
+Then render the same diorama from a real game frame.
 
 **M2 — profiles and fallback**
 Detect scene signature from `DISPCNT`/`BGxCNT` (BG mode, enabled mask,

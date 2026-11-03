@@ -77,6 +77,7 @@ frame_000001/
   "game": {"title": "POKEMON EMER", "code": "BPEE", "maker": "01", "version": 0},
   "scale": 2,
   "screen": [240, 160],
+  "layer_size": [480, 320],
   "dispcnt": "0x1F40",
   "bgcnt": ["0x0000", "0x0101", "0x0202", "0x0303"],
   "bg_hofs": [0, 0, 0, 0],
@@ -93,6 +94,8 @@ frame_000001/
 
 Implementation notes:
 
+- `bg0.rgba`…`bg3.rgba` may be raw RGBA8 or PNG. Raw files need `layer_size`
+  in `meta.json`; PNGs carry their own dimensions. The lab loader supports both.
 - `glGetTexImage` on the layer textures is the least invasive readback. It
   returns the texture at its actual size (`240*scale` × `160*scale`).
 - `glReadPixels` from each BG FBO is an alternative; bind the FBO and read.
