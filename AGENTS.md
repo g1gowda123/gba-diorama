@@ -71,20 +71,22 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   signatures, and CLI (`--dump`, `--atlas`, `--all-layers`, `--force-3d`,
   `--profile`).
 - `atlas.py`: offline E1 scaffold; stitches BG layers from several dumps at
-  their scroll offsets into a larger canvas. No coverage mask or VRAM
-  invalidation yet.
+  their scroll offsets into a larger canvas and records per-layer coverage.
+  VRAM invalidation and automatic sequence capture are still missing.
 - `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
-  signature (BG2 ground, BG3 backdrop ignored, BG1 canopy deferred).
-- `tests/`: 31 tests covering decode, dump round-trip, profiles, atlas
-  stitching, mesh, render, post, fallback, determinism.
+  signature (BG2 ground, BG3 backdrop ignored, BG1 canopy at a naive constant
+  height).
+- `tests/`: 33 tests covering decode, dump round-trip, profiles, atlas
+  stitching/coverage, ground compositing, mesh, render, post, fallback,
+  determinism.
 
 ## Next tasks (in order)
 
-1. **World atlas coverage + sequence capture.** `atlas.py` stitches offline
-   dumps, but it needs a coverage mask, VRAM-change invalidation, and an mGBA
-   sequence mode before it can replace the sparse-overlay skip. Then implement
-   E2 parallax depth with a confidence value.
+1. **World atlas sequence capture + invalidation.** `atlas.py` stitches
+   offline dumps and records coverage, but it needs VRAM-change invalidation
+   and an mGBA sequence mode before it can replace the sparse-overlay skip.
+   Then implement E2 parallax depth with a confidence value.
 2. **Profile discovery/debug UI.** Auto-load a profile directory, show the
    current signature and chosen profile, and add a hotkey/overlay to cycle layer
    roles and heights. Camera overrides (`distance`, `pitch_deg`, `yaw_deg`) are

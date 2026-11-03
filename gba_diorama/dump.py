@@ -253,6 +253,43 @@ def _extract_obj_sprites(dump: GbaDump, width: int, height: int, scale: float) -
     return sprites
 
 
+def _composite_behind(
+    dump: GbaDump, ground_index: int, ground: np.ndarray
+) -> np.ndarray:
+    """Fill transparent holes in the ground with layers behind it.
+
+    Route 101's BG2 ground has a transparent rectangle where a ledge lives on
+    BG3.  Extruding BG2 alone leaves a black hole; compositing the backdrop
+    layers into the ground keeps the ledge and closes the mesh.
+    """
+
+    height, width = ground.shape[:2]
+    background = np.zeros((height, width, 4), dtype=np.float32)
+    background_alpha = np.zeros((height, width, 1), dtype=np.float32)
+    # Composite farthest-to-nearest so the ground can sit on top of the result.
+    for index in range(3, ground_index, -1):
+        image = dump.layers.get(index)
+        if image is None or image.shape != ground.shape:
+            continue
+        alpha = image[..., 3:4].astype(np.float32) / 255.0
+        background[..., :3] = (
+            image[..., :3] * alpha + background[..., :3] * (1.0 - alpha)
+        )
+        background_alpha = alpha + background_alpha * (1.0 - alpha)
+        background[..., 3:4] = background_alpha * 255.0
+
+    ground_alpha = ground[..., 3:4].astype(np.float32) / 255.0
+    out = np.empty((height, width, 4), dtype=np.float32)
+    out[..., :3] = (
+        ground[..., :3] * ground_alpha
+        + background[..., :3] * (1.0 - ground_alpha)
+    )
+    out[..., 3:4] = (
+        ground_alpha + background_alpha * (1.0 - ground_alpha)
+    ) * 255.0
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
 @dataclass
 class DumpWorld:
     """Minimal SyntheticWorld-compatible adapter for a decoded dump.
@@ -317,7 +354,7 @@ class DumpWorld:
                 key=score,
             )
 
-        ground = dump.layers[ground_index]
+        ground = _composite_behind(dump, ground_index, dump.layers[ground_index])
         h, w = ground.shape[:2]
         if h % 8 or w % 8:
             raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
@@ -396,8 +433,10 @@ class DumpWorld:
                 )
 
         sprites = _extract_obj_sprites(dump, w, h, 512.0 / max(w, h))
+        layers = dict(dump.layers)
+        layers[ground_index] = ground
         return cls(
-            layers=dump.layers,
+            layers=layers,
             terrain_height=terrain,
             ground_side_material=ground_side,
             layer_present=present,

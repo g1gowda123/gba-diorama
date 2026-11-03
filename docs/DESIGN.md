@@ -142,8 +142,9 @@ materials; a real integration will infer them.
 ### 5.3 World atlas (prototype)
 
 `atlas.py` implements the offline half: it places each BG layer at its scroll
-offset in a larger canvas and composites overlapping dumps. The persistent
-in-emulator version still needs a coverage mask and invalidation.
+offset in a larger canvas, composites overlapping dumps, and records a
+per-layer coverage mask. The persistent in-emulator version still needs VRAM
+invalidation and sequence capture.
 
 mGBA's BG textures are screen-space (240×160). A tilted camera exposes their
 edges. The fix is a persistent **world atlas**:

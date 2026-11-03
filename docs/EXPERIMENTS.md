@@ -30,8 +30,8 @@ atlas so a tilted camera does not expose missing pixels?
 every frame in some effects.
 
 **Status:** prototype. `atlas.py` stitches offline dumps at their scroll
-offsets and alpha-composites overlaps; a coverage mask, VRAM invalidation, and
-mGBA sequence capture are still missing.
+offsets, alpha-composites overlaps, and records a per-layer coverage mask;
+VRAM invalidation and mGBA sequence capture are still missing.
 
 ## E2 — Auto-depth from parallax
 

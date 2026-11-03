@@ -5,6 +5,7 @@ import numpy as np
 from gba_diorama.dump import DumpWorld, GbaDump, export_synthetic_dump, load_dump
 from gba_diorama.inspect import main as inspect_main
 from gba_diorama.mesh import scene_extent
+from gba_diorama.profiles import LayerProfile, SceneProfile
 from gba_diorama.synthetic import build_synthetic_world
 
 
@@ -112,6 +113,22 @@ def test_sparse_overlay_skip_is_opt_in():
     width, depth = scene_extent(DumpWorld.from_dump(dump))
     assert width == 512.0
     assert abs(depth - 512.0 * 64 / 96) < 1e-4
+
+
+def test_ground_composites_layers_behind_it():
+    h = w = 16
+    background = np.full((h, w, 4), (90, 50, 30, 255), dtype=np.uint8)
+    ground = np.full((h, w, 4), (40, 150, 70, 255), dtype=np.uint8)
+    ground[:8, :8, 3] = 0  # transparent hole, as on Route 101's ledge
+    profile = SceneProfile("test", (LayerProfile(2, role="ground"),))
+
+    adapted = DumpWorld.from_dump(
+        _fake_dump({2: ground, 3: background}), profile=profile
+    )
+
+    assert adapted.ground_layer == 2
+    assert tuple(adapted.layers[2][0, 0]) == (90, 50, 30, 255)
+    assert tuple(adapted.layers[2][12, 12]) == (40, 150, 70, 255)
 
 
 def test_obj_sprite_is_cropped_from_oam():

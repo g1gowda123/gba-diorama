@@ -29,20 +29,23 @@ height = 0.0
 material = "ground"
 side_material = "dirt"
 
-# Sparse foreground canopy. Keep it out of the mesh until height inference can
-# distinguish tree tops from buildings. Change this to role = "world" with
-# height = 18.0 to see the naive extrusion.
+# Sparse foreground canopy. This is a deliberately naive constant-height
+# extrusion so the demo reads as a diorama; height inference will replace it.
 [[profiles.layers]]
 bg = 1
-role = "ignore"
+role = "foreground"
+height = 10.0
+material = ""
+side_material = "grass"
 
 [[profiles.layers]]
 bg = 0
 role = "ui"
 flat = true
 
-# Optional camera override. The default is a ~25.6 degree pitch and a distance
-# of 1.15x the longer world axis.
+# Optional camera override. A slightly higher pitch and closer distance make
+# the screen-sized slab read as a diorama.
 [profiles.camera]
-pitch_deg = 25.6
-distance = 588.8
+pitch_deg = 35.0
+distance = 500.0
+yaw_deg = 18.0

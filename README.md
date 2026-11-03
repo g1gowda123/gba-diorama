@@ -18,10 +18,13 @@ The first real result comes from an mGBA dump of Pokémon Emerald's Route 101:
 ![Emerald Route 101 as a 3D2D diorama](docs/images/emerald-route101.png)
 
 The dump loader picked BG2 as the ground from layer content (BG3 is a
-low-detail backdrop in this scene), cropped the player out of the OBJ layer,
-and rendered it as a billboard on a tilted plinth. Sparse foreground layers are
-skipped by default until height inference can separate tree canopies from
-buildings; `--all-layers` shows the naive extrusion.
+low-detail backdrop in this scene), composited the backdrop into transparent
+holes, cropped the player out of the OBJ layer, and rendered it as a billboard
+on a tilted plinth. The example profile opts into a naive constant-height
+extrusion of the sparse BG1 canopy; generic renders still skip sparse overlays
+until height inference can separate tree canopies from buildings, and
+`--all-layers` shows the unprofiled version. This image was re-rendered after
+fixing the BG/OBJ vertical flip.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
@@ -169,9 +172,10 @@ positions:
 python -m gba_diorama --atlas dumps/route-a dumps/route-b --out /tmp/atlas.png
 ```
 
-The atlas is still offline and does not yet track a coverage mask or invalidate
-regions when VRAM changes. Those are the next steps before it can replace the
-temporary sparse-overlay skip.
+The atlas is still offline. It records a per-layer coverage mask, but does not
+yet invalidate regions when VRAM changes or capture a sequence automatically;
+those are the next steps before it can replace the temporary sparse-overlay
+skip.
 
 ## What works
 

@@ -24,6 +24,14 @@ class AtlasResult:
     frames: int
     origin: tuple[int, int]
     layer_bounds: dict[int, tuple[int, int, int, int]]
+    coverage: dict[int, np.ndarray]
+
+    @property
+    def coverage_ratio(self) -> dict[int, float]:
+        return {
+            index: float(mask.mean()) if mask.size else 0.0
+            for index, mask in self.coverage.items()
+        }
 
 
 def _layer_offset(dump: GbaDump, index: int) -> tuple[int, int]:
@@ -94,12 +102,24 @@ def stitch_dumps(
         height = max(height, int(atlas_size[1]))
 
     canvases: dict[int, np.ndarray] = {}
+    coverages: dict[int, np.ndarray] = {}
     bounds: dict[int, tuple[int, int, int, int]] = {}
     for index, items in placements.items():
         canvas = np.zeros((height, width, 4), dtype=np.uint8)
+        coverage = np.zeros((height, width), dtype=bool)
         for x, y, image in items:
-            _blend_into(canvas, image, x - min_x, y - min_y)
+            ox = x - min_x
+            oy = y - min_y
+            _blend_into(canvas, image, ox, oy)
+            image_h, image_w = image.shape[:2]
+            x0 = max(0, ox)
+            y0 = max(0, oy)
+            x1 = min(width, ox + image_w)
+            y1 = min(height, oy + image_h)
+            if x1 > x0 and y1 > y0:
+                coverage[y0:y1, x0:x1] = True
         canvases[index] = canvas
+        coverages[index] = coverage
         bounds[index] = (
             min(x for x, _, _ in items) - min_x,
             min(y for _, y, _ in items) - min_y,
@@ -113,6 +133,10 @@ def stitch_dumps(
         "frames": len(dumps),
         "origin": [min_x, min_y],
         "layers": sorted(canvases),
+        "coverage": {
+            str(index): round(float(mask.mean()), 6)
+            for index, mask in coverages.items()
+        },
     }
     # A stitched atlas is already in world coordinates; keep the profile
     # signature stable but clear per-frame scroll values.
@@ -140,6 +164,7 @@ def stitch_dumps(
         frames=len(dumps),
         origin=(min_x, min_y),
         layer_bounds=bounds,
+        coverage=coverages,
     )
 
 
