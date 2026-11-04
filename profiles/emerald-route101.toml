@@ -9,6 +9,8 @@
 
 [[profiles]]
 name = "emerald-route101"
+# The dump hook already emits top-down BG/OBJ layers and writes flip_y=false.
+flip_y = false
 
 [profiles.match]
 mode = 0
