@@ -139,26 +139,29 @@ renderer builds a heightfield:
 This is what `mesh.py` implements. The synthetic world authors the heights and
 materials; a real integration will infer them.
 
-#### Canopy relief (prototype)
+#### Canopy cards (prototype)
 
-`relief.py` adds a narrow, generic height heuristic for tree canopies that are
-painted into the ground layer rather than living on a separate BG:
+`relief.py` adds a generic card heuristic for tree canopies that are painted
+into the ground layer rather than living on a separate BG:
 
 - Convert the composited ground to HSV and select saturated green pixels.
 - Morphologically open the mask to break one-pixel outlines that connect
   adjacent trees, then take 4-connected components.
-- Keep components above a minimum area; use their bounding boxes for shadows.
-- Build a 4px cutout texture from the component pixels and fill the
-  corresponding ground pixels with the median surrounding ground color, so the
-  tree is not drawn twice.
-- Give each cutout cell a height from its 8-neighbor coverage (`4..15` world
-  units), producing a rounded volume with low silhouette edges.
-- Mesh the cutout field with the same heightfield/side-wall code as other
-  layers.
+- Extend each component through a narrow band of connected dark pixels to pick
+  up the trunk/outline, without letting dark ground shadows merge neighbors.
+- Build a cutout texture from the component pixels and fill the corresponding
+  ground pixels with the median surrounding ground color, so the tree is not
+  drawn twice.
+- Stand each component up as a camera-facing card: organic lobed alpha, a short
+  synthetic trunk, and a three-card foliage cluster for a rounder silhouette.
+- Use the component boxes for contact shadows; BG1 billboard layers use the
+  same card path.
 
-This is intentionally a visual prior, not a semantic classifier. It currently
-only recognizes green foliage; buildings, rocks, and non-green props still need
-the general E4 classifier.
+The result is deliberately a pop-up sprite-card look, not a heightfield. The
+source art is top-down, so the card reads as a stylized 2.5D tree rather than a
+hand-drawn side view. This is a visual prior, not a semantic classifier; it
+currently only recognizes green foliage, and buildings/rocks/non-green props
+still need the general E4 classifier.
 
 ### 5.3 World atlas (prototype)
 

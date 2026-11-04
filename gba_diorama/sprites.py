@@ -122,6 +122,27 @@ def _critter() -> np.ndarray:
     return _outline(img)
 
 
+def make_trunk_texture(width: int = 10, height: int = 28) -> np.ndarray:
+    """A simple bark card used under BG tree canopies."""
+
+    img = _canvas(width, height)
+    for y in range(height):
+        t = y / max(1, height - 1)
+        inset = int(round(1 + 2 * t))
+        shade = int(78 - 28 * t)
+        _rect(
+            img,
+            inset,
+            y,
+            width - inset,
+            y + 1,
+            (shade + 28, shade, max(18, shade - 18), 255),
+        )
+    # A couple of darker bark streaks.
+    _rect(img, width // 2 - 1, 2, width // 2 + 1, height - 2, (58, 38, 24, 255))
+    return _outline(img, (30, 22, 16, 255))
+
+
 def make_shadow_texture(size: int = 32) -> np.ndarray:
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
     cx = cy = (size - 1) * 0.5

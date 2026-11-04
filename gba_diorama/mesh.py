@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .raster import Camera, Texture, Triangle, make_triangle
-from .sprites import make_character_sprite, make_shadow_texture
+from .sprites import make_character_sprite, make_shadow_texture, make_trunk_texture
 from .synthetic import SIDE_TEXTURES, TILE, WORLD_PX, SyntheticWorld
 
 LIGHT = np.array([-0.35, 0.85, -0.4], dtype=np.float32)
@@ -464,6 +464,157 @@ def _add_sprites(out: list[Triangle], world: SyntheticWorld, camera: Camera) -> 
         )
 
 
+def _organic_cutout(image: np.ndarray) -> np.ndarray:
+    """Trim a rectangular BG tile into a lobed canopy silhouette."""
+
+    height, width = image.shape[:2]
+    yy, xx = np.mgrid[0:height, 0:width]
+    cx = (width - 1) * 0.5
+    cy = (height - 1) * 0.5
+    nx = (xx - cx) / max(cx, 1.0)
+    ny = (yy - cy) / max(cy, 1.0)
+    radius = np.sqrt(nx * nx + ny * ny)
+    angle = np.arctan2(ny, nx)
+    edge = 1.0 + 0.08 * np.sin(5.0 * angle) + 0.05 * np.sin(9.0 * angle)
+    mask = radius <= edge
+    out = image.copy()
+    out[..., 3] = (out[..., 3].astype(np.float32) * mask).astype(np.uint8)
+    return out
+
+
+def _add_cards(
+    out: list[Triangle],
+    world: SyntheticWorld,
+    camera: Camera,
+    texture: np.ndarray,
+    boxes: list[tuple[int, int, int, int]],
+    *,
+    name: str = "canopy-card",
+    with_trunk: bool = False,
+    organic: bool = False,
+    height_scale: float = 1.25,
+    width_scale: float = 1.0,
+    cluster: int = 1,
+) -> None:
+    """Stand 2D cutouts up as camera-facing sprite cards.
+
+    This is the Octopath-style 3D2D move: keep the original BG art, but pop it
+    out of the ground as a sprite card instead of extruding a terraced volume.
+    """
+
+    if not boxes:
+        return
+    img_h, img_w = texture.shape[:2]
+    scale = WORLD_PX / max(img_w, img_h)
+    tex = Texture(texture, name=name)
+    trunk_tex = (
+        Texture(make_trunk_texture(), name=f"{name}-trunk")
+        if with_trunk
+        else None
+    )
+
+    for index, (x0, y0, x1, y1) in enumerate(boxes):
+        width = (x1 - x0) * scale
+        depth = (y1 - y0) * scale
+        if width < 4.0 or depth < 4.0:
+            continue
+        cx = (x0 + x1) * 0.5 * scale
+        cz = (y0 + y1) * 0.5 * scale
+        gy = world.ground_height(cx, cz)
+        # Keep the card close to the source art's proportions.  The cap avoids
+        # turning a merged forest component into a giant wall.
+        height = max(8.0, min(120.0, depth * height_scale))
+        card_width = width * width_scale
+        trunk_h = min(24.0, height * 0.32) if trunk_tex is not None else 0.0
+        base = np.array([cx, gy, cz], dtype=np.float32)
+        leaf_base = base + np.array([0.0, trunk_h, 0.0], dtype=np.float32)
+        top = leaf_base + np.array([0.0, height - trunk_h, 0.0], dtype=np.float32)
+        top = top + camera.forward * (height * 0.04)
+
+        if trunk_tex is not None:
+            trunk_half = camera.right * max(3.0, card_width * 0.10)
+            trunk_top = base + np.array([0.0, trunk_h, 0.0], dtype=np.float32)
+            _quad(
+                out,
+                base - trunk_half,
+                base + trunk_half,
+                trunk_top + trunk_half,
+                trunk_top - trunk_half,
+                (0.0, 1.0),
+                (1.0, 1.0),
+                (1.0, 0.0),
+                (0.0, 0.0),
+                trunk_tex,
+                alpha_test=True,
+                name=f"{name}-trunk",
+            )
+
+        if organic:
+            card_tex = Texture(
+                _organic_cutout(texture[y0:y1, x0:x1]),
+                name=f"{name}-{index}",
+            )
+            u0 = v0 = 0.0
+            u1 = v1 = 1.0
+        else:
+            card_tex = tex
+            u0 = x0 / img_w
+            u1 = x1 / img_w
+            v0 = y0 / img_h
+            v1 = y1 / img_h
+        if cluster > 1:
+            specs = [
+                (0.0, 1.0, 0.00),
+                (-0.32, 0.78, 0.10),
+                (0.32, 0.72, 0.18),
+            ][:cluster]
+        else:
+            specs = [(0.0, 1.0, 0.0)]
+        for offset, card_scale, lift in specs:
+            card_base = (
+                leaf_base
+                + camera.right * (offset * card_width)
+                + camera.up * (lift * height * 0.25)
+            )
+            card_top = card_base + camera.up * ((height - trunk_h) * card_scale)
+            half = camera.right * (card_width * card_scale * 0.5)
+            _quad(
+                out,
+                card_base - half,
+                card_base + half,
+                card_top + half,
+                card_top - half,
+                (u0, v1),
+                (u1, v1),
+                (u1, v0),
+                (u0, v0),
+                card_tex,
+                alpha_test=True,
+                name=name,
+            )
+
+
+def _add_canopy_cards(
+    out: list[Triangle], world: SyntheticWorld, camera: Camera
+) -> None:
+    shadows = getattr(world, "canopy_shadows", None)
+    texture = getattr(world, "canopy_texture", None)
+    if shadows and texture is not None:
+        _add_cards(
+            out,
+            world,
+            camera,
+            texture,
+            shadows,
+            name="canopy-card",
+            with_trunk=True,
+            organic=True,
+            height_scale=2.0,
+            width_scale=1.2,
+            cluster=3,
+        )
+
+
 def _add_canopy_shadows(out: list[Triangle], world: SyntheticWorld) -> None:
     shadows = getattr(world, "canopy_shadows", None)
     texture = getattr(world, "canopy_texture", None)
@@ -522,28 +673,20 @@ def build_scene(world: SyntheticWorld, camera: Camera) -> Scene:
         name=f"BG{ground_layer}-ground",
     )
     _add_canopy_shadows(triangles, world)
-
-    canopy_present = getattr(world, "canopy_present", None)
-    canopy_texture = getattr(world, "canopy_texture", None)
-    canopy_height = getattr(world, "canopy_height", None)
-    if canopy_present is not None and canopy_texture is not None and canopy_height is not None:
-        canopy_base = world.terrain_height
-        if canopy_base.shape != canopy_present.shape:
-            fy = canopy_present.shape[0] // canopy_base.shape[0]
-            fx = canopy_present.shape[1] // canopy_base.shape[1]
-            canopy_base = np.repeat(np.repeat(canopy_base, fy, axis=0), fx, axis=1)
-        _add_layer(
+    _add_canopy_cards(triangles, world, camera)
+    for index, (texture, boxes) in sorted(
+        getattr(world, "billboard_layers", {}).items()
+    ):
+        _add_cards(
             triangles,
             world,
-            ground_layer,
-            canopy_texture,
-            canopy_present,
-            canopy_height,
-            canopy_base,
-            np.full(canopy_present.shape, "canopy", dtype=object),
-            alpha_test=True,
-            name=f"BG{ground_layer}-canopy",
-            tile=4,
+            camera,
+            texture,
+            boxes,
+            name=f"BG{index}-billboard",
+            organic=True,
+            height_scale=1.4,
+            width_scale=1.2,
         )
 
     layer_names = {2: "BG2-mid", 1: "BG1-top"}

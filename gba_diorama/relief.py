@@ -81,11 +81,11 @@ def detect_canopies(
     image: np.ndarray,
     *,
     min_area: int = 48,
-    hue_min: float = 65.0,
-    hue_max: float = 135.0,
-    saturation_min: float = 0.30,
-    value_max: float = 0.92,
-    open_iterations: int = 2,
+    hue_min: float = 90.0,
+    hue_max: float = 140.0,
+    saturation_min: float = 0.35,
+    value_max: float = 0.80,
+    open_iterations: int = 1,
 ) -> list[CanopyComponent]:
     """Find saturated green blobs that look like tree/hedge canopies."""
 
@@ -147,11 +147,45 @@ def detect_canopies(
             component_mask = np.zeros((bbox_h, bbox_w), dtype=bool)
             for py, px in pixels:
                 component_mask[py - min_y, px - min_x] = True
+
+            # The canopy is usually drawn above a small dark trunk.  Extend
+            # only downward through a narrow center band, otherwise dark
+            # outlines/shadows connect adjacent trees into tall columns.
+            pad_y = max(4, bbox_h // 3)
+            ey1 = min(height, max_y + 1 + pad_y)
+            local = np.zeros((ey1 - min_y, bbox_w), dtype=bool)
+            local[:bbox_h, :] = component_mask
+            allowed = local | (value[min_y:ey1, min_x : max_x + 1] < 0.62)
+            grown = local.copy()
+            queue = deque(zip(*np.nonzero(local)))
+            while queue:
+                cy, cx = queue.popleft()
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        ny, nx = cy + dy, cx + dx
+                        if (
+                            0 <= ny < grown.shape[0]
+                            and 0 <= nx < grown.shape[1]
+                            and allowed[ny, nx]
+                            and not grown[ny, nx]
+                        ):
+                            grown[ny, nx] = True
+                            queue.append((ny, nx))
+
+            ys, xs = np.nonzero(grown)
+            if not len(ys):
+                continue
+            gy0, gy1 = min_y + int(ys.min()), min_y + int(ys.max()) + 1
             components.append(
                 CanopyComponent(
-                    mask=component_mask,
-                    bbox=(min_x, min_y, max_x + 1, max_y + 1),
-                    area=len(pixels),
+                    mask=grown[
+                        ys.min() : ys.max() + 1,
+                        xs.min() : xs.max() + 1,
+                    ],
+                    bbox=(min_x, gy0, max_x + 1, gy1),
+                    area=int(grown.sum()),
                 )
             )
     return components

@@ -1,5 +1,6 @@
 import numpy as np
 
+from gba_diorama.mesh import _organic_cutout
 from gba_diorama.relief import build_canopy_field, detect_canopies
 
 
@@ -33,3 +34,12 @@ def test_canopy_field_has_volume_and_removes_tree_from_ground():
     assert tuple(field.ground[16, 16, :3]) == (112, 192, 160)
     assert field.texture[16, 16, 3] == 255
     assert field.texture[0, 0, 3] == 0
+
+
+def test_organic_cutout_trims_card_corners():
+    image = np.full((32, 32, 4), (40, 120, 40, 255), dtype=np.uint8)
+    cutout = _organic_cutout(image)
+    assert cutout[0, 0, 3] == 0
+    assert cutout[0, -1, 3] == 0
+    assert cutout[16, 16, 3] == 255
+    assert cutout.shape == image.shape

@@ -32,14 +32,16 @@ height = 0.0
 material = "ground"
 side_material = "dirt"
 
-# Sparse BG1 foreground (tall grass/canopy fragments). Optional; the main tree
-# canopies live in BG2 and are handled by relief.py.
+# Sparse BG1 foreground leaves/tall grass. Render as upright cutout cards, not
+# as a constant-height extrusion. The main tree canopies live in BG2 and are
+# handled by relief.py.
 [[profiles.layers]]
 bg = 1
 role = "foreground"
 height = 10.0
 material = ""
 side_material = "grass"
+billboard = true
 
 [[profiles.layers]]
 bg = 0
@@ -49,6 +51,6 @@ flat = true
 # Optional camera override. A slightly higher pitch and closer distance make
 # the screen-sized slab read as a diorama.
 [profiles.camera]
-pitch_deg = 30.0
-distance = 560.0
+pitch_deg = 24.0
+distance = 380.0
 yaw_deg = 8.0

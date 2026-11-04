@@ -331,6 +331,9 @@ class DumpWorld:
     canopy_height: np.ndarray | None = None
     canopy_texture: np.ndarray | None = None
     canopy_shadows: list[tuple[int, int, int, int]] = field(default_factory=list)
+    billboard_layers: dict[
+        int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
+    ] = field(default_factory=dict)
 
     @classmethod
     def from_dump(
@@ -382,17 +385,21 @@ class DumpWorld:
         canopy_height = None
         canopy_texture = None
         canopy_shadows: list[tuple[int, int, int, int]] = []
+        billboard_layers: dict[
+            int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
+        ] = {}
         if h % 8 == 0 and w % 8 == 0:
-            canopy = build_canopy_field(
-                ground,
-                detect_canopies(ground),
-            )
-            if canopy is not None:
-                canopy_present = canopy.present
-                canopy_height = canopy.heights
-                canopy_texture = canopy.texture
-                canopy_shadows = [component.bbox for component in canopy.components]
-                ground = canopy.ground
+            components = detect_canopies(ground)
+            # A uniform green field is not a forest.  Only lift components
+            # when they cover a plausible fraction of the world layer.
+            if components and sum(c.area for c in components) < 0.40 * h * w:
+                canopy = build_canopy_field(ground, components)
+                if canopy is not None:
+                    canopy_present = canopy.present
+                    canopy_height = canopy.heights
+                    canopy_texture = canopy.texture
+                    canopy_shadows = [component.bbox for component in canopy.components]
+                    ground = canopy.ground
         if h % 8 or w % 8:
             raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
         cells = (h // 8, w // 8)
@@ -439,6 +446,17 @@ class DumpWorld:
                     continue
                 image = dump.layers.get(layer.bg)
                 if image is None:
+                    continue
+                if layer.billboard:
+                    components = detect_canopies(image)
+                    area = image.shape[0] * image.shape[1]
+                    if components and sum(c.area for c in components) < 0.40 * area:
+                        field = build_canopy_field(image, components)
+                        if field is not None:
+                            billboard_layers[layer.bg] = (
+                                field.texture,
+                                [component.bbox for component in components],
+                            )
                     continue
                 default_height = (
                     layer.height
@@ -487,6 +505,7 @@ class DumpWorld:
             canopy_height=canopy_height,
             canopy_texture=canopy_texture,
             canopy_shadows=canopy_shadows,
+            billboard_layers=billboard_layers,
         )
 
     def ground_height(self, x: float, z: float) -> float:

@@ -21,12 +21,12 @@ The dump loader picked BG2 as the ground from layer content (BG3 is a
 low-detail backdrop in this scene), composited the backdrop into transparent
 holes, cropped the player out of the OBJ layer, and rendered it as a billboard
 on a tilted plinth. It also detects saturated-green canopy regions in BG2,
-separates touching trees with a morphological opening, lifts each component
-into a small heightfield with side walls and contact shadows, and fills the
-ground underneath so the tree is not drawn twice. BG1 remains an optional
-sparse overlay; `--all-layers` shows the unprofiled version. This image was
-re-rendered after fixing the OBJ vertical flip; both the BG and OBJ FBOs are
-top-down.
+separates touching trees with a morphological opening, cuts each component into
+an organic card, stands it upright on a short trunk, and adds a contact shadow.
+Sparse BG1 leaves use the same card treatment. `--all-layers` shows the
+unprofiled version. Both the BG and OBJ FBOs are top-down. The cards are a
+stylized 3D2D approximation: the source art is top-down, so the result reads as
+a pop-up sprite card rather than a hand-drawn side-view tree.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
@@ -125,7 +125,7 @@ gba.py       decode BG0–BG3 to RGBA layer images + tilemap metadata
 profiles     scene signature -> layer role, height, material, parallax
         │
         ▼
-mesh.py      heightfields + side walls + base plinth + sprite billboards
+mesh.py      heightfields + canopy cards + plinth + sprite billboards
         │
         ▼
 raster.py    3D rasterizer (z-buffer, alpha test, blend, fog)
@@ -145,7 +145,7 @@ GBA tilemaps into a 0x18000-byte VRAM buffer and decodes them back through
 |---|---|---|
 | BG3 | ground | heightfield, fully opaque |
 | BG2 | mid scenery / props | heightfield, alpha-tested cutouts |
-| BG1 | foreground / canopy | heightfield, alpha-tested cutouts |
+| BG1 | foreground / canopy | heightfield or upright cutout cards |
 | BG0 | UI / textbox | flat 2D overlay (not in the demo yet) |
 | OBJ | characters / props | camera-facing billboards + shadows |
 
@@ -198,9 +198,9 @@ sparse-overlay skip.
   to write layer PNGs from a dump.
 - Real mGBA dump rendering: content-based ground selection, non-square world
   extents, and OBJ-layer sprites cropped from OAM entries.
-- Canopy relief from BG2: saturated-green component detection, morphological
-  splitting of touching trees, a 4px heightfield with side walls, ground
-  fill-under, and contact shadows.
+- Canopy cards from BG2/BG1: saturated-green component detection, morphological
+  splitting of touching trees, organic cutouts, upright trunk + multi-card
+  foliage, ground fill-under, and contact shadows.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
 - Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size
@@ -208,7 +208,7 @@ sparse-overlay skip.
   distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 39 tests.
+- Deterministic CLI and 40 tests.
 
 ## What is not done yet
 
@@ -217,9 +217,11 @@ sparse-overlay skip.
 - No affine BG, bitmap BG, windows, mosaic, or GBA alpha/brightness effects.
 - Real sprites are cropped from the composited OBJ layer; OAM/OBJ tile decoding
   is still a primitive, not a full per-sprite renderer.
-- Canopy relief is a green-color heuristic, not semantic understanding: it does
-  not yet separate trees from green buildings, and 4px cells read as terraced
-  foliage rather than organic silhouettes.
+- Canopy cards are a green-color heuristic, not semantic understanding: they do
+  not yet separate trees from green buildings. Because the GBA tree art is
+  top-down, the cards read as stylized pop-up sprites rather than true
+  side-view trees; hand-authored side-view assets or a stronger procedural
+  foliage pass are the next visual step.
 - Sparse foreground layers are still skipped by default until height inference
   can tell tree canopies from buildings.
 - Profiles are opt-in (`--profile`); there is no automatic profile discovery or
@@ -240,7 +242,7 @@ gba_diorama/
   inspect.py     dump -> per-layer PNGs
   synthetic.py   synthetic GBA-format world (the test fixture)
   relief.py      canopy detection, cutout field, ground fill-under
-  mesh.py        heightfields, side walls, plinth, sprite billboards
+  mesh.py        heightfields, canopy cards, side walls, plinth, billboards
   raster.py      software 3D rasterizer
   post.py        bloom / tilt-shift / vignette / grade
   sprites.py     procedural pixel-art stand-ins

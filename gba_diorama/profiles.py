@@ -150,6 +150,7 @@ class LayerProfile:
     material: str = ""
     side_material: str = "stone"
     flat: bool = False
+    billboard: bool = False
     min_coverage: float = 0.0
 
     @property
@@ -261,6 +262,7 @@ def _layer_from_dict(data: dict[str, Any], source: str) -> LayerProfile:
         material=str(data.get("material", "")),
         side_material=str(data.get("side_material", "stone")),
         flat=bool(data.get("flat", False)),
+        billboard=bool(data.get("billboard", False)),
         min_coverage=float(data.get("min_coverage", 0.0)),
     )
 
