@@ -22,15 +22,20 @@ low-detail backdrop in this scene), composited the backdrop into transparent
 holes, tightly cropped the player out of the OBJ layer to ground the sprite at its
 feet, and rendered it as an upright billboard on a tilted plinth. It also detects
 world props and trees across layers: multi-layer metatiles (e.g. BG1 elevated
-treetops + BG2 trunks/bases) are unified before segmentation, and watershed
-component expansion preserves the authentic handcrafted pixel art without
-mangling or distorting the silhouette. A procedural detector can also segment
-arbitrary custom ROM hack tilesets (such as autumn, snowy, or alien palettes)
-by discovering dominant ground terrain without hardcoded color constraints.
-Each tree is rendered as an upright card capped to its footprint and rendered
-with three depth slices (a darker, slightly wider card behind the main card for
-canopy thickness), while the cleared ground underneath is smoothly inpainted.
-No synthetic trunk, sprite atlas, or hand-placed tree is used.
+treetops + BG2 trunks/bases) are unified before segmentation, and a procedural
+detector can segment arbitrary custom ROM hack tilesets (such as autumn, snowy,
+or alien palettes) by discovering dominant ground terrain without hardcoded
+color constraints.
+
+Each tree becomes an upright side-view card generated from its own canopy and
+trunk pixels. A seeded RNG varies the crown proportions and overlapping lobes,
+and the crown is stretched vertically so the top-down footprint reads as a
+standing tree instead of a squat bush. Cards are capped to their source
+footprint and rendered with three depth slices (a darker, slightly wider card
+behind the main card for canopy thickness). The cleared footprint is filled
+with small patches of the surrounding ground texture, preserving the map's
+grass, path, and palette instead of leaving a flat glowing hole. No synthetic
+trunk, sprite atlas, or hand-placed tree is used.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:

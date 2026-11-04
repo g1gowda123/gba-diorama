@@ -107,44 +107,72 @@ def _inpaint_nearest(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return out
 
 
+def _patch_sources(known: np.ndarray, patch: int) -> np.ndarray:
+    """Return top-left coordinates where a fully known patch fits."""
+
+    ok = known.copy()
+    for dy in range(patch):
+        for dx in range(patch):
+            if not dy and not dx:
+                continue
+            shifted = np.zeros_like(known)
+            shifted[dy:, dx:] = known[: known.shape[0] - dy, : known.shape[1] - dx]
+            ok &= shifted
+    return ok
+
+
 def _inpaint_ring(
     image: np.ndarray,
     mask: np.ndarray,
     components: list[CanopyComponent],
 ) -> np.ndarray:
-    """Fill each footprint from a ring of nearby ground pixels.
+    """Fill each cleared footprint with patches of nearby ground texture.
 
-    Sampling the immediate boundary picks up the tree's own shadow and turns
-    the hole into a flat teal rectangle.  A wider ring reaches actual grass and
-    keeps its speckled texture.
+    A flat median fill leaves a smooth glowing puddle where the tree was.
+    Copying small patches from the surrounding grass preserves its speckle,
+    palette and local shading, so the cleared ground reads as terrain rather
+    than a hole.
     """
 
     out = image.copy()
+    patch = 4
+    known = ~mask
+    valid = _patch_sources(known, patch)
+    valid_coords = np.argwhere(valid)
+    if not len(valid_coords):
+        return out
     for component in components:
         x0, y0, x1, y1 = component.bbox
         local = np.zeros(mask.shape, dtype=bool)
         local[y0:y1, x0:x1] = component.mask
-        fill = _morph(local, erode=False, iterations=2)
-        ring = _morph(fill, erode=False, iterations=10) & ~_morph(
-            fill, erode=False, iterations=2
-        )
-        ring &= ~mask
-        pixels = image[ring, :3]
-        if not len(pixels):
+        fill = _morph(local, erode=False, iterations=2) & ~mask
+        if not fill.any():
             continue
-        # Filter out extreme dark shadow/outline pixels to sample clean terrain:
-        if len(pixels) > 10:
-            lum = pixels.mean(axis=-1)
-            bright = lum > np.percentile(lum, 15)
-            if bright.any():
-                pixels = pixels[bright]
+        # Prefer source patches close to the component so the fill matches the
+        # local terrain (path, grass, ledge) instead of a distant biome.
+        pad = 24
+        near = valid_coords[
+            (valid_coords[:, 0] >= max(0, y0 - pad))
+            & (valid_coords[:, 0] <= min(mask.shape[0] - patch, y1 + pad))
+            & (valid_coords[:, 1] >= max(0, x0 - pad))
+            & (valid_coords[:, 1] <= min(mask.shape[1] - patch, x1 + pad))
+        ]
+        sources = near if len(near) else valid_coords
         rng = np.random.default_rng((x0 * 73856093) ^ (y0 * 19349663))
-        picks = rng.integers(0, len(pixels), size=int(fill.sum()))
-        base = np.median(pixels, axis=0)
-        # Smoothly blend base terrain with texture variations, gently shaded
-        # into undergrowth so it reads cleanly without muddy confetti.
-        fill_rgb = 0.70 * base + 0.30 * pixels[picks]
-        out[fill, :3] = np.clip(fill_rgb * 0.85, 0, 255).astype(np.uint8)
+        for by in range(y0, y1, patch):
+            for bx in range(x0, x1, patch):
+                target = fill[by : by + patch, bx : bx + patch]
+                if not target.any():
+                    continue
+                sy, sx = sources[int(rng.integers(0, len(sources)))]
+                source = image[sy : sy + patch, sx : sx + patch, :3]
+                block = out[by : by + patch, bx : bx + patch, :3]
+                block[target] = source[: target.shape[0], : target.shape[1]][target]
+        # Slight darkening reads as the shadowed undergrowth left behind the
+        # lifted canopy without turning the footprint into a flat block.
+        out[fill, :3] = np.clip(
+            out[fill, :3].astype(np.float32) * 0.90, 0, 255
+        ).astype(np.uint8)
         out[fill, 3] = 255
     return out
 
@@ -616,12 +644,47 @@ def detect_procedural_objects(
     return components
 
 
-def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
-    """Build a side-view tree card from the game's authentic sprite pixels.
+def _draw_canopy_lobe(
+    out: np.ndarray,
+    texture: np.ndarray,
+    canopy_h: int,
+    cx: float,
+    cy: float,
+    rx: float,
+    ry: float,
+    *,
+    mirror: bool = False,
+) -> None:
+    """Draw one oval of real canopy pixels into a side-view card."""
 
-    Preserves the authentic pixel art of the tree (canopy and trunk)
-    extracted from the ROM, with deterministic subtle framing variation
-    seeded by the component bbox.
+    height, width = texture.shape[:2]
+    x0 = max(0, int(cx - rx))
+    x1 = min(out.shape[1], int(cx + rx) + 1)
+    y0 = max(0, int(cy - ry))
+    y1 = min(out.shape[0], int(cy + ry) + 1)
+    for y in range(y0, y1):
+        ny = (y + 0.5 - cy) / max(ry, 1.0)
+        for x in range(x0, x1):
+            nx = (x + 0.5 - cx) / max(rx, 1.0)
+            if nx * nx + ny * ny > 1.0:
+                continue
+            sx = int((nx * 0.5 + 0.5) * (width - 1))
+            if mirror:
+                sx = width - 1 - sx
+            sy = min(canopy_h - 1, max(0, int((ny * 0.5 + 0.5) * (canopy_h - 1))))
+            src = texture[sy, sx]
+            if src[3] > 0:
+                out[y, x] = src
+
+
+def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
+    """Build a side-view tree procedurally from the game's own canopy pixels.
+
+    There is no per-tree sprite table and no hand-placed trunk.  The component
+    bbox seeds a deterministic RNG; that RNG varies the crown proportions and
+    the number/placement of overlapping lobes.  Every opaque pixel still comes
+    from the source canopy/trunk art.  The crown is stretched vertically so the
+    top-down footprint reads as a standing tree instead of a squat bush.
     """
 
     if component.texture is None or component.canopy_height <= 0:
@@ -629,6 +692,7 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     texture = component.texture
     height, width = texture.shape[:2]
     canopy_h = min(component.canopy_height, height)
+    trunk = texture[canopy_h:height]
     if canopy_h < 4 or width < 4:
         return None
 
@@ -641,13 +705,56 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     ) & 0xFFFFFFFF
     rng = np.random.default_rng(seed)
 
-    pad_top = int(rng.integers(0, 2))
-    pad_side = int(rng.integers(0, 2)) if width <= (x1 - x0) else 0
+    # Keep the card inside the source footprint horizontally; grow it upward
+    # so the silhouette has tree proportions.  Oversizing the crown made
+    # adjacent cards overlap and left the cleared footprint visible.
+    out_w = max(10, min(96, int(round(width * rng.uniform(0.92, 1.02)))))
+    crown_h = max(18, min(160, int(round(canopy_h * rng.uniform(1.20, 1.55)))))
+    trunk_h = max(3, int(round(max(1, height - canopy_h) * rng.uniform(0.7, 1.0))))
+    out = np.zeros((crown_h + trunk_h, out_w, 4), dtype=np.uint8)
 
-    out_h = height + pad_top
-    out_w = width + pad_side * 2
-    out = np.zeros((out_h, out_w, 4), dtype=np.uint8)
-    out[pad_top : pad_top + height, pad_side : pad_side + width] = texture
+    # Central mass plus 2-4 satellite lobes.  Jitter and mirroring are seeded
+    # by the bbox, so neighbouring trees do not share an identical silhouette.
+    lobes: list[tuple[float, float, float, float, bool]] = [
+        (0.50, 0.48, 0.34, 0.46, False)
+    ]
+    count = int(rng.integers(2, 5))
+    for index in range(count):
+        angle = 2.0 * np.pi * index / count + rng.uniform(-0.35, 0.35)
+        cx = 0.50 + 0.20 * np.cos(angle) + rng.uniform(-0.03, 0.03)
+        cy = 0.50 + 0.20 * np.sin(angle) + rng.uniform(-0.03, 0.03)
+        rx = 0.20 + rng.uniform(0.0, 0.08)
+        ry = 0.22 + rng.uniform(0.0, 0.08)
+        lobes.append((cx, cy, rx, ry, bool(rng.integers(0, 2))))
+
+    for cx, cy, rx, ry, mirror in lobes:
+        _draw_canopy_lobe(
+            out,
+            texture,
+            canopy_h,
+            out_w * cx,
+            crown_h * cy,
+            out_w * rx,
+            crown_h * ry,
+            mirror=mirror,
+        )
+
+    # Actual trunk pixels, cropped to their real horizontal extent and scaled.
+    if trunk_h > 0 and trunk.size:
+        trunk_pixels = trunk[..., 3] > 0
+        if trunk_pixels.any():
+            _, xs = np.nonzero(trunk_pixels)
+            trunk = trunk[:, xs.min() : xs.max() + 1]
+        tw = max(6, int(round(out_w * rng.uniform(0.22, 0.30))))
+        tx0 = (out_w - tw) // 2
+        for y in range(trunk_h):
+            sy = min(trunk.shape[0] - 1, int(y / trunk_h * trunk.shape[0]))
+            for x in range(tw):
+                sx = min(trunk.shape[1] - 1, int(x / tw * trunk.shape[1]))
+                src = trunk[sy, sx]
+                if src[3] > 0:
+                    out[crown_h + y, tx0 + x] = src
+
     return out
 
 

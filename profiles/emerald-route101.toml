@@ -42,18 +42,12 @@ value_max = 0.95
 open_iterations = 5
 min_area = 48
 
-# Sparse BG1 foreground leaves/tall grass. Render as upright cutout cards, not
-# as a constant-height extrusion. The main tree canopies live in BG2 and are
-# handled by relief.py.
+# BG1 is sparse foreground grass fringe art in this scene. The main tree
+# canopies live in BG2 and are handled by relief.py; rendering BG1 as separate
+# billboards produced floating leaf cards, so ignore it here.
 [[profiles.layers]]
 bg = 1
-role = "foreground"
-height = 10.0
-material = ""
-side_material = "grass"
-billboard = true
-detector = "alpha"
-min_area = 8
+role = "ignore"
 
 [[profiles.layers]]
 bg = 0

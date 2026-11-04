@@ -114,3 +114,22 @@ player/NPC are upright, and the path runs below the ledge.
   `/tmp/opencode/agentb-fixed.png`: ledge above player, upright player/NPC.
 - Committing only the board + orientation correction; Agent B's detector and
   visual changes remain uncommitted for review.
+
+### 2026-11-04 — Agent A — tree cards + ground repair
+
+- Integrated Agent B's procedural detector, tight OBJ crop, and unified
+  BG1/BG2 metatile path; commit `ad2696a`.
+- Removed the full-mask label regrowth in `detect_canopies` and the
+  bottom-row square stretch in `make_side_view_card`; both caused tall
+  column-like cards. Profile now uses `open_iterations = 5`.
+- Restored the seeded procedural side-view card (`_draw_canopy_lobe`) with a
+  taller crown (1.20–1.55× canopy height) so top-down tree art reads as a
+  standing tree.
+- Replaced the flat ring-median inpaint with a 4×4 patch fill sampled from
+  nearby ground, preserving grass/path speckle and palette.
+- Ignored BG1 in `profiles/emerald-route101.toml`: its sparse fringe art
+  rendered as floating leaf cards. BG2 still owns the full trees.
+- `python3 -m pytest -q` → **47 passed**; render
+  `/tmp/opencode/tall-cards.png`, copied to
+  `docs/images/emerald-route101.png`.
+- Next: 3D houses (P5b) and denser forest separation.
