@@ -6,6 +6,39 @@ synthetic world.
 
 Status legend: **done** / **prototype** / **next** / **later**.
 
+## E0 — Map-aware layer semantics
+
+**Question:** Can we determine which BG is ground, canopy, roof, or UI from the
+game's map data instead of tuning screen-space color thresholds?
+
+**Method**
+
+- Parse the map header/layout, primary and secondary tilesets, and
+  `map.bin` blockdata.
+- Decode each metatile's 16-bit attributes and layer type:
+  Normal (`MAP_BLOCK_BG_21`), Covered (`MAP_BLOCK_BG_32`), or Split
+  (`MAP_BLOCK_BG_31`).
+- Map the authored layers to GBA BGs:
+  - Normal: middle → BG2, top → BG1
+  - Covered: bottom → BG3, middle → BG2
+  - Split: bottom → BG3, top → BG1
+- Render the exact BG layers offline, then use pixels only to find object
+  extents inside the already-correct layer.
+
+**Metrics**
+
+- layer-role accuracy vs. a hand-checked map
+- tree/house extraction accuracy on vanilla maps and romhacks
+- how often a 2D fallback is needed
+
+**Risks:** romhacks with nonstandard metatile data; maps that use Split
+metatiles; games that do not use Pokémon-style map structures.
+
+**Status:** research done. `docs/MAP-FORMAT-RESEARCH.md` records the verified
+Porymap/Porytiles/pokeemerald mapping and the Route 101 / Littleroot ground
+truth. Next is the offline compiler P0/P1: parse map data, select the correct
+BG, then run deterministic object extraction.
+
 ## E1 — Temporal world atlas
 
 **Question:** Can we accumulate screen-space BG textures into a persistent world
@@ -68,6 +101,8 @@ heightfield for any GBA game/romhack?
 - Decode screen entries: tile index, H/V flip, palette bank.
 - Decode char data: 4bpp/8bpp, 8×8 tiles.
 - Build 256×256 / 512×512 map images from the 32×32 screen blocks.
+- Decode Pokémon map/layout/metatile data when available, so the correct BG
+  is chosen before meshing.
 - Extrude opaque tiles to boxes or a heightfield.
 - Alpha-test transparent pixels so cutouts remain cutouts.
 
@@ -80,35 +115,43 @@ heightfield for any GBA game/romhack?
 **Risks:** 8bpp tile ordering; 2D OBJ tile mapping; mosaic; per-scanline affine.
 
 **Status:** prototype. `gba.py` decodes text BGs; `synthetic.py` exercises the
-same path. Affine/bitmap modes are deliberately rejected.
+same path; the research scripts render Route 101 and Littleroot from real
+layout/metatile data. Affine/bitmap modes are deliberately rejected.
 
-## E4 — Height heuristics
+## E4 — Map-aware object extraction and 2.5D generation
 
-**Question:** Can we assign per-cell heights/materials without per-game data?
+**Question:** Can we extract trees, houses, and props deterministically from the
+correct BG layer, then turn them into Octopath-style cards/meshes without ML?
 
 **Method**
 
-- Start with priors: BG3=0, BG2=4–8, BG1=12–24, BG0=UI.
-- Compute opacity, edge density, tile frequency, and color continuity.
-- Classify cells as ground / low prop / tall prop / UI.
-- Assign a confidence; low confidence falls back to flat.
-- Cache meshes per unique tile/metatile.
+- Use E0 to select the world BG (Route 101 trees are BG2 middle-layer art, not
+  BG1).
+- Trees: connected components over the full BG image, then cut the actual
+  canopy + trunk pixels; generate a taller side-view card from those pixels.
+- Houses: combine BG1 roof trim + BG2 walls/roof body, split roof vs wall,
+  extrude four walls plus a roof plane.
+- Clear the source footprint with tile-aware ground replacement, not
+  generative inpainting.
+- Add contact shadows and 2–3 depth slices per tree card.
+- Keep detector parameters in profiles for romhack fallback.
 
 **Metrics**
 
 - human preference on 20 representative scenes
-- percentage of cells classified with high confidence
+- percentage of objects extracted with high confidence
+- overlap/empty-footprint rate in dense forests
 - regression against the synthetic ground truth
 
 **Risks:** over-extruding flat decoration; misclassifying water; battle scenes
-with different layer semantics.
+with different layer semantics; romhack tilesets that break color heuristics.
 
-**Status:** prototype. `relief.py` implements the narrow green-canopy case:
-HSV selection, morphological splitting, 4px cutout cells, neighbor-coverage
-height, ground fill-under, and contact shadows. The general per-cell classifier
-(buildings, rocks, water, non-green props) is still later. The synthetic world
-continues to author heights directly so the meshing/raster path can be
-developed independently.
+**Status:** prototype. `relief.py` detects multi-tile green canopies, composes
+actual trunk pixels, and generates procedural side-view cards; `mesh.py` adds
+depth slices and shadows. The current Route 101 render uses BG2 for trees.
+Houses are designed in `docs/OFFLINE-MAP-COMPILER.md` but not implemented yet.
+No ML is required for this path; ML remains an optional offline fallback for
+ambiguous romhack art.
 
 ## E5 — Sprite slabs + shadows
 
@@ -133,7 +176,8 @@ read as 2D characters in a 3D world?
 large bosses that should not be billboards.
 
 **Status:** prototype. `sprites.py` provides stand-ins; `mesh.py` builds the
-billboards and shadows.
+billboards and shadows. The dump path currently crops the composited OBJ layer;
+real OAM/OBJ tile decoding is still later.
 
 ## E6 — Collision-learned heightmap
 
@@ -157,6 +201,8 @@ movement, without reading game code?
 the most experimental idea; keep it optional.
 
 **Status:** later. It is a good "novel approach" bet but not on the critical path.
+For Pokémon maps, the layout/collision data already provides most of this, so
+E6 is mainly a fallback for games without accessible map metadata.
 
 ## E7 — Diorama presentation
 
@@ -165,7 +211,7 @@ diorama rather than a tilted screenshot?
 
 **Method**
 
-- Camera: 15–30° pitch, slight yaw, 35–45° FOV.
+- Camera: 20–35° pitch, slight yaw, 35–45° FOV.
 - Plinth: two-tier stone base; the map reads as a physical object.
 - Lighting: key light from upper-left; side walls shaded by normal.
 - Shadows: contact shadows for sprites; optional AO at wall bases.
@@ -181,16 +227,68 @@ diorama rather than a tilted screenshot?
 **Risks:** overdoing blur/bloom; hiding pixel art; motion sickness from orbit.
 
 **Status:** prototype. `pipeline.py` + `post.py` implement the fixed-camera
-version; the screenshot in the README is the reference.
+version; the Route 101 profile uses 35° pitch, 480 distance, 8° yaw, canopy
+cards, and three depth slices per tree. The screenshot in the README is the
+reference.
+
+## E8 — Custom GPU 3D pass in the emulator
+
+**Question:** What runtime renderer is needed to show the 3D2D scene inside the
+emulator at full speed, instead of rendering offline PNGs?
+
+**Method**
+
+- Fork mGBA's GL renderer; keep its 2D path as the fallback.
+- After the normal layer finalize, upload the BG/OBJ textures and the compiled
+  map manifest to GPU textures.
+- Draw a single 3D scene into an offscreen FBO:
+  - ground plane from the repaired tilemap;
+  - tree cards with alpha test and 2–3 depth slices;
+  - house wall/roof meshes with depth write;
+  - OBJ billboards and contact shadows;
+  - fog, directional tint, and optional bloom/tilt-shift post.
+- Use one camera/profile per scene; preserve a 2D fallback for menus, battles,
+  affine/bitmap modes, and maps without a compiled manifest.
+- Keep the CPU `raster.py` renderer as the reference implementation for
+  correctness tests and visual comparisons.
+
+**Metrics**
+
+- frame time at 1080p and 4K on the target GPU
+- draw calls and VRAM per map
+- visual parity with the CPU reference
+- fallback correctness on menus/battles/unknown maps
+
+**Risks:** GL/GLES context and FBO lifetime in mGBA; shader portability;
+transparent sorting; emulator UI overlays; driver-specific readback behavior.
+
+**Status:** next. No in-emulator 3D pass exists yet. The mGBA dump hook proves
+we can access the per-layer FBOs, and the CPU renderer already defines the
+scene/camera/mesh contract that the GPU pass should consume.
 
 ## Recommended order
 
-1. **E1 + E2 + E7**: real layer dump, atlas, parallax depth, presentation. This
-   gives a compelling real-game demo with a fixed camera.
-2. **E3 + E4**: full-map meshing and heuristics, so the camera can move and the
-   renderer works on more scenes.
-3. **E5**: real OAM/OBJ sprites and shadows.
-4. **E6**: optional collision learning.
+1. **E0**: map-aware layer semantics. Research is done; next is the offline
+   compiler's map parser.
+2. **E3 + E4**: map-aware layer rendering, deterministic tree/house extraction,
+   cards/meshes, and tile-aware ground repair. This is the correctness core.
+3. **E8**: custom GPU 3D pass in the emulator, fed by the compiled manifest.
+4. **E1 + E2**: world atlas and parallax depth once the camera can move beyond
+   one screen.
+5. **E7**: presentation polish (camera, shadows, bloom, tilt-shift, grade).
+6. **E5**: real OAM/OBJ decoding and sprite sorting.
+7. **E6**: optional collision learning for games without usable map metadata.
+
+## ML policy
+
+- The critical path must work with **zero ML**: map data → layer selection →
+  deterministic object extraction → cards/meshes → GPU pass.
+- No ML at runtime.
+- ML is an optional offline fallback for ambiguous romhack art or games without
+  accessible map metadata. It must never be required to compile or render the
+  base games.
+- Prefer tile/metatile classifiers and manual corrections over generative
+  inpainting; preserve the GBA palette and dithering.
 
 ## Evaluation harness
 

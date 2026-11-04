@@ -17,6 +17,11 @@ Compile each ROM once, offline:
 At runtime the emulator just loads the manifest for the current map and renders
 the stored objects. No ML, no per-frame detection, no map walking.
 
+The compiler is **map-data-first**, not ML-first. For Pokémon-style games the
+layout, tilesets, metatiles, and layer types already tell us which BG is ground
+and which is canopy/roof. The deterministic path must work end-to-end with zero
+ML; ML is only an optional offline assistant for ambiguous romhack art.
+
 This is a **content pipeline**, not a runtime feature. It can be implemented
 without changing the current `gba_diorama` renderer or mGBA patch.
 
@@ -48,6 +53,9 @@ without changing the current `gba_diorama` renderer or mGBA patch.
 For Pokémon-style games:
 
 - parse map headers/layouts/tilesets/metatiles from the ROM;
+- decode each metatile's layer type and map it to BG1/BG2/BG3
+  (Normal: middle→BG2, top→BG1; Covered: bottom→BG3, middle→BG2;
+  Split: bottom→BG3, top→BG1);
 - render each map's BG layers offline at native resolution;
 - record map ID, dimensions, tileset IDs, layer roles.
 
@@ -69,13 +77,20 @@ Prefer tile-level evidence over screen-level pixels:
 - treat large connected structures as candidate objects;
 - detect rectangular roof/wall regions for buildings.
 
-A small tile classifier is the best ML investment here. It is cheap and
-generalizes better than per-screen segmentation.
+This can be deterministic. Start with tile/metatile clustering, layer role,
+and connected components; add a small tile classifier only if a romhack corpus
+shows the classical path failing. ML is an optimization, not a prerequisite.
+
+Verified ground truth: Route 101's full trees are on **BG2** (386 Normal / 14
+Covered / 0 Split; BG1 is only sparse fringes). Littleroot houses split across
+**BG1 roof trim + BG2 walls/roof body**.
 
 ### P2. Detect object instances
 
-- trees/foliage: multi-tile connected components over the full BG image;
-- houses: rectangle/roof-wall detection on the metatile grid;
+- trees/foliage: multi-tile connected components over the full world BG
+  (BG2 for Route 101), not per 8×8 tile;
+- houses: rectangle/roof-wall detection on the metatile grid, combining the
+  BG1 roof trim with the BG2 walls/roof body;
 - rocks/signs/fences: template or tile-classifier matches;
 - optional ML assist for ambiguous regions:
   - SAM / SAM 2 masks;
@@ -226,6 +241,10 @@ On map load:
 Lazy-load atlas pages per map or tileset. Do not load the entire game atlas at
 startup.
 
+The runtime consumer is the custom GPU 3D pass described in
+`docs/EXPERIMENTS.md` (E8), not the offline CPU renderer. The CPU path remains
+the reference implementation and test oracle.
+
 Suggested manifest shape:
 
 ```json
@@ -295,14 +314,20 @@ embedded in a savestate.
 
 ## ML guidance
 
-Use ML as an offline assistant:
+The compiler must work without ML. For Pokémon-style maps, map data and
+deterministic tile/component logic are sufficient for the base games and most
+romhacks.
+
+Use ML only as an optional offline assistant when deterministic extraction is
+ambiguous:
 
 - SAM/SAM 2 for masks;
 - Grounding DINO/CLIP for labels;
 - a small U-Net/DeepLab/tile classifier for tile roles.
 
-Avoid generative inpainting for pixel art; it destroys the palette and
-dithering. Tile-aware patch synthesis is faster and looks correct.
+Do not add ML to the runtime and do not require it for the MVP. Avoid
+generative inpainting for pixel art; it destroys the palette and dithering.
+Tile-aware patch synthesis is faster and looks correct.
 
 ## MVP
 
@@ -319,6 +344,7 @@ One map, two object classes:
 Acceptance criteria:
 
 - compile completes without playing the game;
+- compile and render work with zero ML;
 - no runtime ML;
 - cache is keyed by ROM hash and version;
 - unknown maps fall back to 2D;
