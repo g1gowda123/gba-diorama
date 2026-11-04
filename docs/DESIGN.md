@@ -149,11 +149,13 @@ into the ground layer rather than living on a separate BG:
   adjacent trees, then take 4-connected components.
 - Extend each component through a narrow band of connected dark pixels to pick
   up the trunk/outline, without letting dark ground shadows merge neighbors.
+- Compose the canopy pixels and the actual trunk pixels without the grass gap,
+  so the card keeps the game's own tree colors and proportions.
 - Build a cutout texture from the component pixels and fill the corresponding
-  ground pixels with the median surrounding ground color, so the tree is not
-  drawn twice.
-- Stand each component up as a camera-facing card: organic lobed alpha, a short
-  synthetic trunk, and a three-card foliage cluster for a rounder silhouette.
+  ground pixels from a bright ring of surrounding grass, so the tree is not
+  drawn twice and the fill does not leave a flat teal rectangle.
+- Stand each component up as a single camera-facing card with organic lobed
+  alpha. No synthetic trunk or repeated foliage cluster.
 - Use the component boxes for contact shadows; BG1 billboard layers use the
   same card path.
 

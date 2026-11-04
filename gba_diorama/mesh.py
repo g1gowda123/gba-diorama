@@ -563,14 +563,29 @@ def _add_cards(
             v0 = y0 / img_h
             v1 = y1 / img_h
         if cluster > 1:
-            specs = [
-                (0.0, 1.0, 0.00),
-                (-0.32, 0.78, 0.10),
-                (0.32, 0.72, 0.18),
-            ][:cluster]
+            # A billboard cloud: one full tree card plus several smaller
+            # canopy-only cards lifted around it.  All pixels still come from
+            # the original BG art; only placement/scale are procedural.
+            canopy_rows = max(1, int((y1 - y0) * 0.72))
+            cloud_tex = Texture(
+                _organic_cutout(texture[y0 : y0 + canopy_rows, x0:x1]),
+                name=f"{name}-cloud-{index}",
+            )
+            specs = [(0.0, 1.0, 0.00, True)]
+            for i in range(1, cluster):
+                angle = 2.0 * np.pi * (i - 1) / max(1, cluster - 1)
+                specs.append(
+                    (
+                        0.28 * np.cos(angle),
+                        0.62 + 0.08 * (i % 2),
+                        0.12 + 0.10 * (i % 3),
+                        False,
+                    )
+                )
         else:
-            specs = [(0.0, 1.0, 0.0)]
-        for offset, card_scale, lift in specs:
+            specs = [(0.0, 1.0, 0.0, True)]
+
+        for offset, card_scale, lift, full in specs:
             card_base = (
                 leaf_base
                 + camera.right * (offset * card_width)
@@ -578,17 +593,18 @@ def _add_cards(
             )
             card_top = card_base + camera.up * ((height - trunk_h) * card_scale)
             half = camera.right * (card_width * card_scale * 0.5)
+            use_tex = card_tex if full else cloud_tex
             _quad(
                 out,
                 card_base - half,
                 card_base + half,
                 card_top + half,
                 card_top - half,
-                (u0, v1),
-                (u1, v1),
-                (u1, v0),
-                (u0, v0),
-                card_tex,
+                (0.0, 1.0),
+                (1.0, 1.0),
+                (1.0, 0.0),
+                (0.0, 0.0),
+                use_tex,
                 alpha_test=True,
                 name=name,
             )
@@ -607,11 +623,11 @@ def _add_canopy_cards(
             texture,
             shadows,
             name="canopy-card",
-            with_trunk=True,
+            with_trunk=False,
             organic=True,
             height_scale=2.0,
-            width_scale=1.2,
-            cluster=3,
+            width_scale=1.5,
+            cluster=1,
         )
 
 
@@ -684,9 +700,9 @@ def build_scene(world: SyntheticWorld, camera: Camera) -> Scene:
             texture,
             boxes,
             name=f"BG{index}-billboard",
-            organic=True,
+            organic=False,
             height_scale=1.4,
-            width_scale=1.2,
+            width_scale=1.0,
         )
 
     layer_names = {2: "BG2-mid", 1: "BG1-top"}

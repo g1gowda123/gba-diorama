@@ -22,6 +22,7 @@ class CanopyComponent:
     mask: np.ndarray
     bbox: tuple[int, int, int, int]
     area: int
+    texture: np.ndarray | None = None
 
 
 @dataclass
@@ -56,6 +57,87 @@ def _rgb_to_hsv(image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return hue, saturation, maximum
 
 
+def _inpaint_nearest(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Fill masked pixels from the nearest unmasked pixel.
+
+    A median fill turns every tree footprint into a visible flat rectangle.
+    Nearest-neighbour propagation keeps the surrounding grass/path texture and
+    is generic: it does not need to know what the ground looks like.
+    """
+
+    out = image.copy()
+    unknown = mask.copy()
+    if not unknown.any():
+        return out
+    height, width = unknown.shape
+    queue: deque[tuple[int, int]] = deque()
+
+    # Seed with known pixels that touch the hole.  This makes the fill grow
+    # inward from all sides instead of smearing one edge across the hole.
+    known = ~unknown
+    for y, x in np.argwhere(known):
+        if (
+            (y > 0 and unknown[y - 1, x])
+            or (y + 1 < height and unknown[y + 1, x])
+            or (x > 0 and unknown[y, x - 1])
+            or (x + 1 < width and unknown[y, x + 1])
+        ):
+            queue.append((int(y), int(x)))
+
+    while queue:
+        y, x = queue.popleft()
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if 0 <= ny < height and 0 <= nx < width and unknown[ny, nx]:
+                out[ny, nx, :3] = out[y, x, :3]
+                out[ny, nx, 3] = 255
+                unknown[ny, nx] = False
+                queue.append((ny, nx))
+
+    if unknown.any():
+        # Degenerate case: the mask covers the whole layer.  Use the global
+        # median so the result is at least stable.
+        fill = np.median(image[..., :3][known], axis=0).astype(np.uint8)
+        out[unknown, :3] = fill
+        out[unknown, 3] = 255
+    return out
+
+
+def _inpaint_ring(
+    image: np.ndarray,
+    mask: np.ndarray,
+    components: list[CanopyComponent],
+) -> np.ndarray:
+    """Fill each footprint from a ring of nearby ground pixels.
+
+    Sampling the immediate boundary picks up the tree's own shadow and turns
+    the hole into a flat teal rectangle.  A wider ring reaches actual grass and
+    keeps its speckled texture.
+    """
+
+    out = image.copy()
+    for component in components:
+        x0, y0, x1, y1 = component.bbox
+        local = np.zeros(mask.shape, dtype=bool)
+        local[y0:y1, x0:x1] = component.mask
+        fill = _morph(local, erode=False, iterations=4)
+        ring = _morph(fill, erode=False, iterations=14) & ~_morph(
+            fill, erode=False, iterations=2
+        )
+        ring &= ~mask
+        pixels = image[ring, :3]
+        if not len(pixels):
+            continue
+        # Prefer the brighter half of the ring: the near boundary is the
+        # tree's own shadow, while the outer ring reaches sunlit grass.
+        lum = pixels.mean(axis=1)
+        pixels = pixels[lum >= np.percentile(lum, 55)]
+        rng = np.random.default_rng((x0 * 73856093) ^ (y0 * 19349663))
+        picks = rng.integers(0, len(pixels), size=int(fill.sum()))
+        out[fill, :3] = pixels[picks]
+        out[fill, 3] = 255
+    return out
+
+
 def _morph(mask: np.ndarray, *, erode: bool, iterations: int) -> np.ndarray:
     """3x3 morphology without SciPy, used to split touching tree canopies."""
 
@@ -75,6 +157,104 @@ def _morph(mask: np.ndarray, *, erode: bool, iterations: int) -> np.ndarray:
         ]
         out = np.logical_and.reduce(neighbours) if erode else np.logical_or.reduce(neighbours)
     return out
+
+
+def _attach_trunk(
+    image: np.ndarray,
+    hue: np.ndarray,
+    saturation: np.ndarray,
+    value: np.ndarray,
+    bbox: tuple[int, int, int, int],
+    mask: np.ndarray,
+) -> tuple[tuple[int, int, int, int], np.ndarray, np.ndarray | None]:
+    """Extend a canopy cutout through a compact non-green trunk below it.
+
+    The GBA tree tile often has a small brown trunk a few pixels below the
+    canopy.  Keeping those original pixels (instead of inventing a brown
+    rectangle) is what makes the card read as a tree rather than a lollipop.
+    """
+
+    x0, y0, x1, y1 = bbox
+    height, width = image.shape[:2]
+    search_y1 = min(height, y1 + max(12, (y1 - y0)))
+    cx = (x0 + x1) // 2
+    half = max(3, (x1 - x0) // 3)
+    rx0 = max(0, cx - half)
+    rx1 = min(width, cx + half + 1)
+    if search_y1 <= y1 or rx1 <= rx0:
+        return bbox, mask, None
+
+    region = (slice(y1, search_y1), slice(rx0, rx1))
+    # Brown/grey trunk: low hue, low-ish value, not the bright green canopy.
+    trunk = (
+        (hue[region] < 70.0)
+        & (saturation[region] > 0.08)
+        & (value[region] < 0.62)
+    )
+    if not trunk.any():
+        return bbox, mask, None
+
+    seen = np.zeros_like(trunk, dtype=bool)
+    best: tuple[int, int, int, int] | None = None
+    best_area = 0
+    for ty in range(trunk.shape[0]):
+        for tx in range(trunk.shape[1]):
+            if not trunk[ty, tx] or seen[ty, tx]:
+                continue
+            queue: deque[tuple[int, int]] = deque([(ty, tx)])
+            seen[ty, tx] = True
+            pixels: list[tuple[int, int]] = []
+            min_x = max_x = tx
+            min_y = max_y = ty
+            while queue:
+                cy, cx2 = queue.popleft()
+                pixels.append((cy, cx2))
+                min_x = min(min_x, cx2)
+                max_x = max(max_x, cx2)
+                min_y = min(min_y, cy)
+                max_y = max(max_y, cy)
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = cy + dy, cx2 + dx
+                    if (
+                        0 <= ny < trunk.shape[0]
+                        and 0 <= nx < trunk.shape[1]
+                        and trunk[ny, nx]
+                        and not seen[ny, nx]
+                    ):
+                        seen[ny, nx] = True
+                        queue.append((ny, nx))
+            bw = max_x - min_x + 1
+            bh = max_y - min_y + 1
+            if len(pixels) < 3 or bw > max(6, (x1 - x0) // 2) or bh > max(10, y1 - y0):
+                continue
+            if len(pixels) > best_area:
+                best_area = len(pixels)
+                best = (rx0 + min_x, y1 + min_y, rx0 + max_x + 1, y1 + max_y + 1)
+
+    if best is None:
+        return bbox, mask, None
+
+    tx0, ty0, tx1, ty1 = best
+    trunk_h = ty1 - ty0
+    trunk_w = tx1 - tx0
+    canopy_h = y1 - y0
+    new_h = canopy_h + trunk_h
+    new_mask = np.zeros((new_h, x1 - x0), dtype=bool)
+    new_mask[:canopy_h, :] = mask
+    offset_x = max(0, ((x1 - x0) - trunk_w) // 2)
+    new_mask[canopy_h:new_h, offset_x : offset_x + trunk_w] |= trunk[
+        ty0 - y1 : ty1 - y1, tx0 - rx0 : tx1 - rx0
+    ]
+
+    # Compose the original canopy and trunk pixels without the grass gap, so
+    # the card has the tree's real proportions instead of a long lollipop stem.
+    texture = np.zeros((new_h, x1 - x0, 4), dtype=np.uint8)
+    texture[:canopy_h, :, :3] = image[y0:y1, x0:x1, :3]
+    texture[canopy_h:new_h, offset_x : offset_x + trunk_w, :3] = image[
+        ty0:ty1, tx0:tx1, :3
+    ]
+    texture[..., 3] = (new_mask * 255).astype(np.uint8)
+    return (x0, y0, x1, y0 + new_h), new_mask, texture
 
 
 def detect_canopies(
@@ -177,15 +357,100 @@ def detect_canopies(
             ys, xs = np.nonzero(grown)
             if not len(ys):
                 continue
-            gy0, gy1 = min_y + int(ys.min()), min_y + int(ys.max()) + 1
+            gy0 = min_y + int(ys.min())
+            gy1 = min_y + int(ys.max()) + 1
+            bbox = (min_x, gy0, max_x + 1, gy1)
+            component_mask = grown[
+                ys.min() : ys.max() + 1,
+                xs.min() : xs.max() + 1,
+            ]
+            bbox, component_mask, texture = _attach_trunk(
+                image,
+                hue,
+                saturation,
+                value,
+                bbox,
+                component_mask,
+            )
             components.append(
                 CanopyComponent(
-                    mask=grown[
-                        ys.min() : ys.max() + 1,
-                        xs.min() : xs.max() + 1,
-                    ],
-                    bbox=(min_x, gy0, max_x + 1, gy1),
-                    area=int(grown.sum()),
+                    mask=component_mask,
+                    bbox=bbox,
+                    area=int(component_mask.sum()),
+                    texture=texture,
+                )
+            )
+    return components
+
+
+def detect_alpha_objects(
+    image: np.ndarray,
+    *,
+    min_alpha: int = 8,
+    min_area: int = 48,
+    open_iterations: int = 1,
+) -> list[CanopyComponent]:
+    """Find cutout objects on a transparent foreground BG.
+
+    Romhacks often put trees and props on a sparse BG1 instead of painting them
+    into the opaque ground.  In that case alpha is a much better signal than a
+    game-specific colour range.
+    """
+
+    if image.ndim != 3 or image.shape[2] < 4:
+        return []
+    mask = image[..., 3] > min_alpha
+    if not mask.any():
+        return []
+    if open_iterations:
+        mask = _morph(mask, erode=True, iterations=open_iterations)
+        mask = _morph(mask, erode=False, iterations=open_iterations)
+    if not mask.any():
+        return []
+
+    height, width = mask.shape
+    seen = np.zeros_like(mask, dtype=bool)
+    components: list[CanopyComponent] = []
+    for y in range(height):
+        for x in range(width):
+            if not mask[y, x] or seen[y, x]:
+                continue
+            queue: deque[tuple[int, int]] = deque([(y, x)])
+            seen[y, x] = True
+            pixels: list[tuple[int, int]] = []
+            min_x = max_x = x
+            min_y = max_y = y
+            while queue:
+                cy, cx = queue.popleft()
+                pixels.append((cy, cx))
+                min_x = min(min_x, cx)
+                max_x = max(max_x, cx)
+                min_y = min(min_y, cy)
+                max_y = max(max_y, cy)
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = cy + dy, cx + dx
+                    if (
+                        0 <= ny < height
+                        and 0 <= nx < width
+                        and mask[ny, nx]
+                        and not seen[ny, nx]
+                    ):
+                        seen[ny, nx] = True
+                        queue.append((ny, nx))
+            if len(pixels) < min_area:
+                continue
+            bbox_w = max_x - min_x + 1
+            bbox_h = max_y - min_y + 1
+            if bbox_w < 4 or bbox_h < 4:
+                continue
+            component_mask = np.zeros((bbox_h, bbox_w), dtype=bool)
+            for py, px in pixels:
+                component_mask[py - min_y, px - min_x] = True
+            components.append(
+                CanopyComponent(
+                    mask=component_mask,
+                    bbox=(min_x, min_y, max_x + 1, max_y + 1),
+                    area=len(pixels),
                 )
             )
     return components
@@ -215,18 +480,17 @@ def build_canopy_field(
 
     texture = image.copy()
     texture[..., 3] = (mask * 255).astype(np.uint8)
+    for component in components:
+        if component.texture is None:
+            continue
+        x0, y0, x1, y1 = component.bbox
+        texture[y0:y1, x0:x1] = component.texture
 
     # The ground under a lifted canopy should not show the same tree twice.
-    # Replace only the canopy pixels with the dominant surrounding ground
-    # colour; the raised cutout then owns the tree's silhouette.
-    ground_pixels = image[..., :3][~mask]
-    fill = (
-        np.median(ground_pixels, axis=0).astype(np.uint8)
-        if ground_pixels.size
-        else np.array([110, 180, 120], dtype=np.uint8)
-    )
-    ground = image.copy()
-    ground[mask, :3] = fill
+    # Inpaint from the nearest surrounding ground pixels so the result keeps
+    # the map's grass/path texture instead of becoming a flat coloured block.
+    fill_mask = _morph(mask, erode=False, iterations=2)
+    ground = _inpaint_ring(image, fill_mask, components)
 
     coverage = mask.reshape(cells[0], tile, cells[1], tile).mean(axis=(1, 3))
     present = coverage >= 0.25

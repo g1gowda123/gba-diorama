@@ -15,8 +15,12 @@ import numpy as np
 from PIL import Image
 
 from .gba import TextBg, decode_oam_entry, decode_text_bg
-from .profiles import SceneProfile
-from .relief import build_canopy_field, detect_canopies
+from .profiles import LayerProfile, SceneProfile
+from .relief import (
+    build_canopy_field,
+    detect_alpha_objects,
+    detect_canopies,
+)
 
 LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
 
@@ -308,6 +312,30 @@ def _composite_behind(
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def _detect_objects(image: np.ndarray, layer: LayerProfile):
+    """Run the layer's configured object detector.
+
+    Green is the default because most top-down overworld foliage is saturated
+    green, but profiles can switch to alpha for foreground layers or tune the
+    HSV range for a romhack with autumn/snow/alien trees.
+    """
+
+    if layer.detector == "alpha":
+        return detect_alpha_objects(
+            image,
+            min_alpha=layer.min_alpha,
+            min_area=layer.min_area,
+        )
+    return detect_canopies(
+        image,
+        min_area=layer.min_area,
+        hue_min=layer.hue_min,
+        hue_max=layer.hue_max,
+        saturation_min=layer.saturation_min,
+        value_max=layer.value_max,
+    )
+
+
 @dataclass
 class DumpWorld:
     """Minimal SyntheticWorld-compatible adapter for a decoded dump.
@@ -389,7 +417,12 @@ class DumpWorld:
             int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
         ] = {}
         if h % 8 == 0 and w % 8 == 0:
-            components = detect_canopies(ground)
+            ground_profile = (
+                profile.ground_profile
+                if profile is not None
+                else LayerProfile(ground_index, role="ground")
+            )
+            components = _detect_objects(ground, ground_profile)
             # A uniform green field is not a forest.  Only lift components
             # when they cover a plausible fraction of the world layer.
             if components and sum(c.area for c in components) < 0.40 * h * w:
@@ -448,7 +481,7 @@ class DumpWorld:
                 if image is None:
                     continue
                 if layer.billboard:
-                    components = detect_canopies(image)
+                    components = _detect_objects(image, layer)
                     area = image.shape[0] * image.shape[1]
                     if components and sum(c.area for c in components) < 0.40 * area:
                         field = build_canopy_field(image, components)

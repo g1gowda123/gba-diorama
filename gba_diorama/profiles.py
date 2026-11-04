@@ -152,6 +152,13 @@ class LayerProfile:
     flat: bool = False
     billboard: bool = False
     min_coverage: float = 0.0
+    detector: str = "green"
+    min_area: int = 48
+    min_alpha: int = 8
+    hue_min: float = 90.0
+    hue_max: float = 140.0
+    saturation_min: float = 0.35
+    value_max: float = 0.80
 
     @property
     def is_ground(self) -> bool:
@@ -190,6 +197,13 @@ class SceneProfile:
         for layer in self.layers:
             if layer.is_ground:
                 return layer.bg
+        return None
+
+    @property
+    def ground_profile(self) -> LayerProfile | None:
+        for layer in self.layers:
+            if layer.is_ground:
+                return layer
         return None
 
     @property
@@ -255,6 +269,9 @@ def _layer_from_dict(data: dict[str, Any], source: str) -> LayerProfile:
     role = str(data.get("role", "world")).lower()
     if role not in VALID_ROLES:
         raise ValueError(f"{source}: unknown layer role {role!r}")
+    detector = str(data.get("detector", "green")).lower()
+    if detector not in {"green", "alpha"}:
+        raise ValueError(f"{source}: unknown layer detector {detector!r}")
     return LayerProfile(
         bg=bg,
         role=role,
@@ -264,6 +281,13 @@ def _layer_from_dict(data: dict[str, Any], source: str) -> LayerProfile:
         flat=bool(data.get("flat", False)),
         billboard=bool(data.get("billboard", False)),
         min_coverage=float(data.get("min_coverage", 0.0)),
+        detector=detector,
+        min_area=_parse_int(data.get("min_area", 48)),
+        min_alpha=_parse_int(data.get("min_alpha", 8)),
+        hue_min=float(data.get("hue_min", 90.0)),
+        hue_max=float(data.get("hue_max", 140.0)),
+        saturation_min=float(data.get("saturation_min", 0.35)),
+        value_max=float(data.get("value_max", 0.80)),
     )
 
 

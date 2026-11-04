@@ -18,9 +18,9 @@ affine_mask = 0
 screen_sizes = [0, 0, 0, 0]
 
 # BG3 is a low-detail checkerboard backdrop in this scene; BG2 is the world.
-# Canopy relief runs automatically on the composited ground: saturated-green
-# tree blobs are split into components, lifted into a 4px heightfield, and
-# filled underneath with surrounding ground color.
+# Canopy cards run automatically on the composited ground: saturated-green
+# tree blobs are split into components, cut out as upright cards, and the
+# ground underneath is inpainted with the surrounding grass/path texture.
 [[profiles.layers]]
 bg = 3
 role = "ignore"
@@ -31,6 +31,13 @@ role = "ground"
 height = 0.0
 material = "ground"
 side_material = "dirt"
+# Tune these for romhacks with different foliage colours.
+detector = "green"
+hue_min = 90.0
+hue_max = 140.0
+saturation_min = 0.35
+value_max = 0.80
+min_area = 48
 
 # Sparse BG1 foreground leaves/tall grass. Render as upright cutout cards, not
 # as a constant-height extrusion. The main tree canopies live in BG2 and are
@@ -42,6 +49,8 @@ height = 10.0
 material = ""
 side_material = "grass"
 billboard = true
+detector = "alpha"
+min_area = 8
 
 [[profiles.layers]]
 bg = 0

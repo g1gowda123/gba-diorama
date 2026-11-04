@@ -43,3 +43,20 @@ def test_organic_cutout_trims_card_corners():
     assert cutout[0, -1, 3] == 0
     assert cutout[16, 16, 3] == 255
     assert cutout.shape == image.shape
+
+
+def test_canopy_card_composes_actual_trunk_without_grass_gap():
+    image = np.zeros((64, 64, 4), dtype=np.uint8)
+    image[..., :3] = (112, 192, 160)
+    image[..., 3] = 255
+    image[8:24, 8:24, :3] = (40, 120, 40)
+    # Grass gap between canopy and the small brown trunk.
+    image[24:30, 8:24, :3] = (112, 192, 160)
+    image[30:36, 14:18, :3] = (90, 60, 40)
+
+    component = detect_canopies(image)[0]
+    assert component.texture is not None
+    # The gap is removed: the composed card is shorter than canopy + gap + trunk.
+    assert component.bbox[3] < 36
+    assert tuple(component.texture[-1, 7, :3]) == (90, 60, 40)
+    assert component.texture[-1, 7, 3] == 255
