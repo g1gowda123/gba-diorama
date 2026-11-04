@@ -121,60 +121,90 @@ def _patch_sources(known: np.ndarray, patch: int) -> np.ndarray:
     return ok
 
 
+def _inpaint_fill(
+    image: np.ndarray,
+    fill: np.ndarray,
+    known: np.ndarray,
+    seed: int,
+) -> np.ndarray:
+    """Copy small ground patches into ``fill`` from the ``known`` area."""
+
+    out = image.copy()
+    if not fill.any():
+        return out
+    patch = 4
+    valid_coords = np.argwhere(_patch_sources(known, patch))
+    if not len(valid_coords):
+        return out
+    ys, xs = np.nonzero(fill)
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    # Prefer source patches close to the hole so the fill matches the local
+    # terrain (path, grass, ledge) instead of a distant biome.
+    pad = 24
+    near = valid_coords[
+        (valid_coords[:, 0] >= max(0, y0 - pad))
+        & (valid_coords[:, 0] <= min(known.shape[0] - patch, y1 + pad))
+        & (valid_coords[:, 1] >= max(0, x0 - pad))
+        & (valid_coords[:, 1] <= min(known.shape[1] - patch, x1 + pad))
+    ]
+    sources = near if len(near) else valid_coords
+    rng = np.random.default_rng(seed)
+    for by in range(y0, y1, patch):
+        for bx in range(x0, x1, patch):
+            target = fill[by : by + patch, bx : bx + patch]
+            if not target.any():
+                continue
+            sy, sx = sources[int(rng.integers(0, len(sources)))]
+            source = image[sy : sy + patch, sx : sx + patch, :3]
+            block = out[by : by + patch, bx : bx + patch, :3]
+            block[target] = source[: target.shape[0], : target.shape[1]][target]
+    # Slight darkening reads as shadowed ground left behind the lifted object
+    # without turning the footprint into a flat block.
+    out[fill, :3] = np.clip(
+        out[fill, :3].astype(np.float32) * 0.90, 0, 255
+    ).astype(np.uint8)
+    out[fill, 3] = 255
+    return out
+
+
 def _inpaint_ring(
     image: np.ndarray,
     mask: np.ndarray,
     components: list[CanopyComponent],
 ) -> np.ndarray:
-    """Fill each cleared footprint with patches of nearby ground texture.
-
-    A flat median fill leaves a smooth glowing puddle where the tree was.
-    Copying small patches from the surrounding grass preserves its speckle,
-    palette and local shading, so the cleared ground reads as terrain rather
-    than a hole.
-    """
+    """Fill each cleared footprint with patches of nearby ground texture."""
 
     out = image.copy()
-    patch = 4
     known = ~mask
-    valid = _patch_sources(known, patch)
-    valid_coords = np.argwhere(valid)
-    if not len(valid_coords):
-        return out
     for component in components:
         x0, y0, x1, y1 = component.bbox
         local = np.zeros(mask.shape, dtype=bool)
         local[y0:y1, x0:x1] = component.mask
         fill = _morph(local, erode=False, iterations=2) & ~mask
-        if not fill.any():
-            continue
-        # Prefer source patches close to the component so the fill matches the
-        # local terrain (path, grass, ledge) instead of a distant biome.
-        pad = 24
-        near = valid_coords[
-            (valid_coords[:, 0] >= max(0, y0 - pad))
-            & (valid_coords[:, 0] <= min(mask.shape[0] - patch, y1 + pad))
-            & (valid_coords[:, 1] >= max(0, x0 - pad))
-            & (valid_coords[:, 1] <= min(mask.shape[1] - patch, x1 + pad))
-        ]
-        sources = near if len(near) else valid_coords
-        rng = np.random.default_rng((x0 * 73856093) ^ (y0 * 19349663))
-        for by in range(y0, y1, patch):
-            for bx in range(x0, x1, patch):
-                target = fill[by : by + patch, bx : bx + patch]
-                if not target.any():
-                    continue
-                sy, sx = sources[int(rng.integers(0, len(sources)))]
-                source = image[sy : sy + patch, sx : sx + patch, :3]
-                block = out[by : by + patch, bx : bx + patch, :3]
-                block[target] = source[: target.shape[0], : target.shape[1]][target]
-        # Slight darkening reads as the shadowed undergrowth left behind the
-        # lifted canopy without turning the footprint into a flat block.
-        out[fill, :3] = np.clip(
-            out[fill, :3].astype(np.float32) * 0.90, 0, 255
-        ).astype(np.uint8)
-        out[fill, 3] = 255
+        out = _inpaint_fill(
+            out, fill, known, (x0 * 73856093) ^ (y0 * 19349663)
+        )
     return out
+
+
+def inpaint_regions(
+    image: np.ndarray,
+    mask: np.ndarray,
+    *,
+    exclude: np.ndarray | None = None,
+) -> np.ndarray:
+    """Replace an arbitrary object mask with surrounding ground texture."""
+
+    known = ~mask
+    if exclude is not None and exclude.shape[:2] == mask.shape[:2]:
+        known &= ~exclude
+    return _inpaint_fill(
+        image,
+        mask,
+        known,
+        int(mask.sum()) * 2654435761 & 0xFFFFFFFF,
+    )
 
 
 def _morph(mask: np.ndarray, *, erode: bool, iterations: int) -> np.ndarray:
@@ -642,6 +672,140 @@ def detect_procedural_objects(
             )
         )
     return components
+
+
+@dataclass(frozen=True)
+class StructureComponent:
+    """A rectangular building split into roof and front-wall art."""
+
+    mask: np.ndarray
+    bbox: tuple[int, int, int, int]
+    area: int
+    eave_y: int
+    roof_texture: np.ndarray
+    wall_texture: np.ndarray
+
+
+def _find_eave(
+    image: np.ndarray,
+    bbox: tuple[int, int, int, int],
+    mask: np.ndarray,
+) -> tuple[float, int]:
+    """Find the strongest horizontal colour break inside a building bbox."""
+
+    x0, y0, x1, y1 = bbox
+    h = y1 - y0
+    lo = y0 + max(2, int(0.28 * h))
+    hi = y0 + max(3, int(0.72 * h))
+    best = (0.0, y0 + int(0.55 * h))
+    for y in range(lo, min(hi, y1 - 1)):
+        a = image[y, x0:x1, :3][mask[y - y0]]
+        b = image[y + 1, x0:x1, :3][mask[y + 1 - y0]]
+        if len(a) < 4 or len(b) < 4:
+            continue
+        score = float(np.abs(a.mean(axis=0) - b.mean(axis=0)).sum())
+        if score > best[0]:
+            best = (score, y + 1)
+    return best
+
+
+def detect_structures(
+    image: np.ndarray,
+    *,
+    exclude_mask: np.ndarray | None = None,
+    min_area: int = 600,
+    min_fill: float = 0.55,
+    min_eave_score: float = 150.0,
+    max_area_fraction: float = 0.35,
+) -> list[StructureComponent]:
+    """Find large rectangular buildings and split them into roof and wall.
+
+    The detector is deliberately generic: it segments pixels far from the
+    dominant terrain colour, keeps blobs that fill most of their bounding box,
+    then cuts the box at the strongest horizontal colour break (the eave).
+    No per-game tile IDs or colour constants are involved.
+    """
+
+    if image.ndim != 3 or image.shape[2] < 3:
+        return []
+    h, w = image.shape[:2]
+    total = h * w
+    pix = image[..., :3].reshape(-1, 3)
+    qpix = (pix // 12) * 12
+    colors, counts = np.unique(qpix, axis=0, return_counts=True)
+    dominant = colors[np.argmax(counts)]
+    dist = np.linalg.norm(image[..., :3].astype(float) - dominant.astype(float), axis=-1)
+    candidate = dist > 40.0
+    if exclude_mask is not None and exclude_mask.shape[:2] == (h, w):
+        candidate &= ~exclude_mask
+    # Close small palette gaps so windows/trim stay attached to the building.
+    candidate = _morph(candidate, erode=False, iterations=1)
+    candidate = _morph(candidate, erode=True, iterations=1)
+    if not candidate.any():
+        return []
+
+    labels = np.zeros((h, w), dtype=int)
+    label_id = 1
+    for y in range(h):
+        for x in range(w):
+            if not candidate[y, x] or labels[y, x]:
+                continue
+            queue: deque[tuple[int, int]] = deque([(y, x)])
+            labels[y, x] = label_id
+            while queue:
+                cy, cx = queue.popleft()
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = cy + dy, cx + dx
+                    if (
+                        0 <= ny < h
+                        and 0 <= nx < w
+                        and candidate[ny, nx]
+                        and labels[ny, nx] == 0
+                    ):
+                        labels[ny, nx] = label_id
+                        queue.append((ny, nx))
+            label_id += 1
+
+    structures: list[StructureComponent] = []
+    for cid in range(1, label_id):
+        ys, xs = np.nonzero(labels == cid)
+        area = len(ys)
+        if area < min_area or area > max_area_fraction * total:
+            continue
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        bw, bh = x1 - x0, y1 - y0
+        if bw < 24 or bh < 20:
+            continue
+        fill = area / float(bw * bh)
+        if fill < min_fill:
+            continue
+        aspect = bw / float(bh)
+        if aspect < 0.55 or aspect > 3.2:
+            continue
+        comp_mask = labels[y0:y1, x0:x1] == cid
+        eave_score, eave = _find_eave(image, (x0, y0, x1, y1), comp_mask)
+        if eave_score < min_eave_score:
+            continue
+        if eave <= y0 + 3 or eave >= y1 - 3:
+            continue
+        roof = np.zeros((eave - y0, bw, 4), dtype=np.uint8)
+        roof[..., :3] = image[y0:eave, x0:x1, :3]
+        roof[..., 3] = (comp_mask[: eave - y0] * 255).astype(np.uint8)
+        wall = np.zeros((y1 - eave, bw, 4), dtype=np.uint8)
+        wall[..., :3] = image[eave:y1, x0:x1, :3]
+        wall[..., 3] = (comp_mask[eave - y0 :] * 255).astype(np.uint8)
+        structures.append(
+            StructureComponent(
+                mask=comp_mask,
+                bbox=(x0, y0, x1, y1),
+                area=area,
+                eave_y=eave,
+                roof_texture=roof,
+                wall_texture=wall,
+            )
+        )
+    return structures
 
 
 def _draw_canopy_lobe(

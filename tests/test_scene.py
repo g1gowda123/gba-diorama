@@ -66,3 +66,42 @@ def test_prebuilt_canopy_cards_have_depth_slices():
     _add_prebuilt_cards(out, _World(), demo_camera(320, 180), [(card, (0, 0, 12, 12))])
     assert len(out) == 6  # three quads, two triangles each
     assert {tri.name.rsplit("-", 1)[-1] for tri in out} == {"0.20", "0.10", "0.00"}
+
+
+def test_structure_mesh_builds_walls_roof_and_gables():
+    from types import SimpleNamespace
+
+    from gba_diorama.mesh import _add_structures
+    from gba_diorama.relief import StructureComponent
+
+    roof = np.zeros((20, 40, 4), dtype=np.uint8)
+    roof[..., :3] = (60, 90, 180)
+    roof[..., 3] = 255
+    wall = np.zeros((16, 40, 4), dtype=np.uint8)
+    wall[..., :3] = (200, 205, 215)
+    wall[..., 3] = 255
+    mask = np.ones((52, 56), dtype=bool)
+    structure = StructureComponent(
+        mask=mask,
+        bbox=(16, 16, 72, 68),
+        area=int(mask.sum()),
+        eave_y=36,
+        roof_texture=roof,
+        wall_texture=wall,
+    )
+    world = SimpleNamespace(
+        layers={3: np.zeros((64, 64, 4), dtype=np.uint8)},
+        ground_layer=3,
+        terrain_height=np.zeros((8, 8), dtype=np.float32),
+        structures=[structure],
+        ground_height=lambda x, z: 0.0,
+    )
+    triangles = []
+    _add_structures(triangles, world, demo_camera(320, 180))
+    names = {triangle.name for triangle in triangles}
+    assert "structure-0-front" in names
+    assert "structure-0-roof-front" in names
+    assert "structure-0-roof-back" in names
+    assert "structure-0-gable-left" in names
+    assert "structure-0-gable-right" in names
+    assert len(triangles) >= 9

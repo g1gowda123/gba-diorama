@@ -21,6 +21,8 @@ from .relief import (
     detect_alpha_objects,
     detect_canopies,
     detect_procedural_objects,
+    detect_structures,
+    inpaint_regions,
 )
 
 LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
@@ -388,6 +390,7 @@ class DumpWorld:
     canopy_cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = field(
         default_factory=list
     )
+    structures: list = field(default_factory=list)
     billboard_layers: dict[
         int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
     ] = field(default_factory=dict)
@@ -443,6 +446,8 @@ class DumpWorld:
         canopy_texture = None
         canopy_shadows: list[tuple[int, int, int, int]] = []
         canopy_cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = []
+        structures: list = []
+        structure_mask: np.ndarray | None = None
         billboard_layers: dict[
             int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
         ] = {}
@@ -470,6 +475,34 @@ class DumpWorld:
             components = _detect_objects(
                 unified_ground, ground_profile, foreground=fg_image
             )
+            # Exclude irregular tree blobs from structure detection.  A green
+            # building roof fills its bbox and must stay available.
+            canopy_exclude = np.zeros((h, w), dtype=bool)
+            for comp in components:
+                bx0, by0, bx1, by1 = comp.bbox
+                fill = comp.area / max(1, (bx1 - bx0) * (by1 - by0))
+                if fill < 0.72:
+                    canopy_exclude[by0:by1, bx0:bx1] |= comp.mask
+            structures = detect_structures(unified_ground)
+            if structures:
+                structure_mask = np.zeros((h, w), dtype=bool)
+                for struct in structures:
+                    sx0, sy0, sx1, sy1 = struct.bbox
+                    structure_mask[sy0:sy1, sx0:sx1] |= struct.mask
+                kept = []
+                for comp in components:
+                    cx0, cy0, cx1, cy1 = comp.bbox
+                    overlap = 0
+                    for struct in structures:
+                        ox0 = max(cx0, struct.bbox[0])
+                        oy0 = max(cy0, struct.bbox[1])
+                        ox1 = min(cx1, struct.bbox[2])
+                        oy1 = min(cy1, struct.bbox[3])
+                        if ox1 > ox0 and oy1 > oy0:
+                            overlap += (ox1 - ox0) * (oy1 - oy0)
+                    if overlap < 0.5 * comp.area:
+                        kept.append(comp)
+                components = kept
             # A uniform green field is not a forest.  Only lift components
             # when they cover a plausible fraction of the world layer.
             if components and sum(c.area for c in components) < 0.40 * h * w:
@@ -481,6 +514,8 @@ class DumpWorld:
                     canopy_shadows = [component.bbox for component in canopy.components]
                     canopy_cards = list(canopy.cards)
                     ground = canopy.ground
+            if structures and structure_mask is not None:
+                ground = inpaint_regions(ground, structure_mask, exclude=canopy_exclude)
         if h % 8 or w % 8:
             raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
         cells = (h // 8, w // 8)
@@ -504,6 +539,9 @@ class DumpWorld:
             side_material: str,
             min_coverage: float,
         ) -> None:
+            if structure_mask is not None and structure_mask.any():
+                image = image.copy()
+                image[structure_mask] = 0
             if image.shape[:2] != (h, w):
                 raise ValueError(
                     f"BG{index} size {image.shape[1]}x{image.shape[0]} does not match "
@@ -528,6 +566,9 @@ class DumpWorld:
                 image = dump.layers.get(layer.bg)
                 if image is None:
                     continue
+                if structure_mask is not None and structure_mask.any():
+                    image = image.copy()
+                    image[structure_mask] = 0
                 if layer.billboard:
                     components = _detect_objects(image, layer)
                     # Filter out foreground components that were already unified
@@ -605,6 +646,7 @@ class DumpWorld:
             canopy_texture=canopy_texture,
             canopy_shadows=canopy_shadows,
             canopy_cards=canopy_cards,
+            structures=structures,
             billboard_layers=billboard_layers,
         )
 

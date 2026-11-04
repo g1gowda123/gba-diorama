@@ -694,6 +694,185 @@ def _add_canopy_cards(
         )
 
 
+def _add_structures(
+    out: list[Triangle],
+    world: SyntheticWorld,
+    camera: Camera,
+) -> None:
+    """Build buildings as walls plus a roof plane from their own art."""
+
+    structures = getattr(world, "structures", None)
+    if not structures:
+        return
+    ground = world.layers[getattr(world, "ground_layer", 3)]
+    img_h, img_w = ground.shape[:2]
+    scale = WORLD_PX / max(img_w, img_h)
+    shadow_tex = Texture(make_shadow_texture(32), name="structure-shadow")
+    for index, struct in enumerate(structures):
+        x0, y0, x1, y1 = struct.bbox
+        left = x0 * scale
+        right = x1 * scale
+        back = y0 * scale
+        front = (y1 - 1) * scale
+        cx = (left + right) * 0.5
+        cz = (back + front) * 0.5
+        base = world.ground_height(cx, cz)
+        wall_h = max(10.0, struct.wall_texture.shape[0] * scale * 0.9)
+        roof_y = base + wall_h
+        wall_tex = Texture(struct.wall_texture, name=f"structure-{index}-wall")
+        roof_tex = Texture(struct.roof_texture, name=f"structure-{index}-roof")
+
+        # Front facade: the game already draws the door and windows here.
+        _quad(
+            out,
+            np.array([left, base, front], dtype=np.float32),
+            np.array([right, base, front], dtype=np.float32),
+            np.array([right, roof_y, front], dtype=np.float32),
+            np.array([left, roof_y, front], dtype=np.float32),
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            wall_tex,
+            alpha_test=True,
+            name=f"structure-{index}-front",
+        )
+        # Side and back walls reuse edge strips of the facade art.
+        strip = max(2, struct.wall_texture.shape[1] // 10)
+        left_tex = Texture(
+            struct.wall_texture[:, :strip],
+            name=f"structure-{index}-left",
+            wrap_u=True,
+        )
+        right_tex = Texture(
+            struct.wall_texture[:, -strip:],
+            name=f"structure-{index}-right",
+            wrap_u=True,
+        )
+        _quad(
+            out,
+            np.array([left, base, front], dtype=np.float32),
+            np.array([left, base, back], dtype=np.float32),
+            np.array([left, roof_y, back], dtype=np.float32),
+            np.array([left, roof_y, front], dtype=np.float32),
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            left_tex,
+            shade=0.80,
+            alpha_test=True,
+            name=f"structure-{index}-left",
+        )
+        _quad(
+            out,
+            np.array([right, base, back], dtype=np.float32),
+            np.array([right, base, front], dtype=np.float32),
+            np.array([right, roof_y, front], dtype=np.float32),
+            np.array([right, roof_y, back], dtype=np.float32),
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            right_tex,
+            shade=0.72,
+            alpha_test=True,
+            name=f"structure-{index}-right",
+        )
+        _quad(
+            out,
+            np.array([right, base, back], dtype=np.float32),
+            np.array([left, base, back], dtype=np.float32),
+            np.array([left, roof_y, back], dtype=np.float32),
+            np.array([right, roof_y, back], dtype=np.float32),
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            wall_tex,
+            shade=0.55,
+            alpha_test=True,
+            name=f"structure-{index}-back",
+        )
+
+        # Gable roof: the top-down roof art is split at its ridge and laid on
+        # two slopes, so the building reads as a roof instead of a flat slab.
+        overhang = max(2.0, min(right - left, front - back) * 0.06)
+        rise = max(4.0, struct.roof_texture.shape[0] * scale * 0.35)
+        ridge_y = roof_y + rise
+        ridge_z = (back + front) * 0.5
+        front_eave = front + overhang
+        back_eave = back - overhang
+        _quad(
+            out,
+            np.array([left - overhang, roof_y, front_eave], dtype=np.float32),
+            np.array([right + overhang, roof_y, front_eave], dtype=np.float32),
+            np.array([right + overhang, ridge_y, ridge_z], dtype=np.float32),
+            np.array([left - overhang, ridge_y, ridge_z], dtype=np.float32),
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.5),
+            (0.0, 0.5),
+            roof_tex,
+            alpha_test=True,
+            name=f"structure-{index}-roof-front",
+        )
+        _quad(
+            out,
+            np.array([left - overhang, ridge_y, ridge_z], dtype=np.float32),
+            np.array([right + overhang, ridge_y, ridge_z], dtype=np.float32),
+            np.array([right + overhang, roof_y, back_eave], dtype=np.float32),
+            np.array([left - overhang, roof_y, back_eave], dtype=np.float32),
+            (0.0, 0.5),
+            (1.0, 0.5),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            roof_tex,
+            shade=0.82,
+            alpha_test=True,
+            name=f"structure-{index}-roof-back",
+        )
+        # Close the triangular gable ends above the side walls.
+        for side, sx, side_tex in (
+            ("left", left, left_tex),
+            ("right", right, right_tex),
+        ):
+            out.append(
+                make_triangle(
+                    np.array([sx, roof_y, front], dtype=np.float32),
+                    np.array([sx, roof_y, back], dtype=np.float32),
+                    np.array([sx, ridge_y, ridge_z], dtype=np.float32),
+                    (0.0, 1.0),
+                    (1.0, 1.0),
+                    (0.5, 0.0),
+                    texture=side_tex,
+                    shade=0.70,
+                    alpha_test=True,
+                    name=f"structure-{index}-gable-{side}",
+                )
+            )
+
+        # Contact shadow on the ground under the building.
+        half_w = (right - left) * 0.58
+        half_d = (front - back) * 0.58
+        _quad(
+            out,
+            np.array([cx - half_w, base + 0.05, cz - half_d], dtype=np.float32),
+            np.array([cx + half_w, base + 0.05, cz - half_d], dtype=np.float32),
+            np.array([cx + half_w, base + 0.05, cz + half_d], dtype=np.float32),
+            np.array([cx - half_w, base + 0.05, cz + half_d], dtype=np.float32),
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0),
+            shadow_tex,
+            blend=True,
+            depth_write=False,
+            fog=False,
+            name=f"structure-{index}-shadow",
+        )
+
+
 def _add_canopy_shadows(out: list[Triangle], world: SyntheticWorld) -> None:
     shadows = getattr(world, "canopy_shadows", None)
     texture = getattr(world, "canopy_texture", None)
@@ -753,6 +932,7 @@ def build_scene(world: SyntheticWorld, camera: Camera) -> Scene:
     )
     _add_canopy_shadows(triangles, world)
     _add_canopy_cards(triangles, world, camera)
+    _add_structures(triangles, world, camera)
     for index, (texture, boxes) in sorted(
         getattr(world, "billboard_layers", {}).items()
     ):

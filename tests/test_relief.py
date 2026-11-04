@@ -6,6 +6,8 @@ from gba_diorama.relief import (
     build_canopy_field,
     detect_canopies,
     detect_procedural_objects,
+    detect_structures,
+    inpaint_regions,
     make_side_view_card,
 )
 
@@ -190,3 +192,50 @@ def test_detect_procedural_objects_with_foreground_seeds():
     # The unified object includes the treetop from y=8 down through trunk at y=48
     assert comp.bbox[1] <= 10
     assert comp.bbox[3] >= 46
+
+
+def test_detect_structures_splits_roof_from_wall():
+    image = np.zeros((96, 96, 4), dtype=np.uint8)
+    image[..., :3] = (112, 192, 160)
+    image[..., 3] = 255
+    # Building: blue roof over a light wall with a dark door.
+    image[20:50, 20:76, :3] = (60, 90, 180)
+    image[50:72, 20:76, :3] = (200, 205, 215)
+    image[55:70, 44:52, :3] = (50, 70, 110)
+
+    structures = detect_structures(image)
+    assert len(structures) == 1
+    structure = structures[0]
+    x0, y0, x1, y1 = structure.bbox
+    assert (x0, y0, x1, y1) == (20, 20, 76, 72)
+    assert 46 <= structure.eave_y <= 54
+    assert structure.roof_texture.shape[0] == structure.eave_y - y0
+    assert structure.wall_texture.shape[0] == y1 - structure.eave_y
+    assert structure.roof_texture[..., 3].any()
+    assert structure.wall_texture[..., 3].any()
+
+
+def test_detect_structures_rejects_irregular_tree_blob():
+    image = np.zeros((96, 96, 4), dtype=np.uint8)
+    image[..., :3] = (112, 192, 160)
+    image[..., 3] = 255
+    # A solid non-terrain blob has no roof/wall colour break.
+    image[24:64, 24:64, :3] = (40, 120, 40)
+    assert detect_structures(image) == []
+
+
+def test_inpaint_regions_replaces_object_with_surrounding_texture():
+    rng = np.random.default_rng(3)
+    image = np.zeros((64, 64, 4), dtype=np.uint8)
+    image[..., :3] = rng.integers(90, 130, size=(64, 64, 3)).astype(np.uint8)
+    image[..., 1] = np.clip(image[..., 1].astype(int) + 70, 0, 255)
+    image[..., 3] = 255
+    mask = np.zeros((64, 64), dtype=bool)
+    mask[24:40, 24:40] = True
+    image[mask, :3] = (255, 0, 255)
+
+    out = inpaint_regions(image, mask)
+    assert out[..., 3].min() == 255
+    assert not np.any(np.all(out[mask, :3] == (255, 0, 255), axis=-1))
+    # The fill comes from the green terrain, not the magenta object.
+    assert out[mask, 1].mean() > out[mask, 0].mean()
