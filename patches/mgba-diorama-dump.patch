@@ -24,10 +24,10 @@ index 71ab7bb..a360e4f 100644
  	renderers/software-mode0.c
 diff --git a/src/gba/renderers/diorama-dump.c b/src/gba/renderers/diorama-dump.c
 new file mode 100644
-index 0000000..4ffa2be
+index 0000000..2cba46c
 --- /dev/null
 +++ b/src/gba/renderers/diorama-dump.c
-@@ -0,0 +1,314 @@
+@@ -0,0 +1,319 @@
 +/* Copyright (c) 2024 gba-diorama contributors
 + *
 + * This Source Code Form is subject to the terms of the Mozilla Public
@@ -79,8 +79,13 @@ index 0000000..4ffa2be
 +}
 +
 +static bool _dirExists(const char* path) {
++#ifdef _WIN32
++	struct _stat st;
++	return _stat(path, &st) == 0 && (st.st_mode & _S_IFDIR);
++#else
 +	struct stat st;
 +	return stat(path, &st) == 0 && (st.st_mode & S_IFDIR);
++#endif
 +}
 +
 +static bool _ensureDir(const char* path) {
