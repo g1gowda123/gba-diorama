@@ -231,3 +231,11 @@ player/NPC are upright, and the path runs below the ledge.
   5. Tested on `/tmp/opencode/atlas-smoke` -> verified output `/tmp/atlas-test.png` with `profile=parallax-inferred` and `atlas_frames=2`.
   6. Added 3 tests in `tests/test_atlas.py` and 2 tests in `tests/test_parallax.py`.
 - `python3 -m pytest -q` → **58 passed**. Released all claimed files. Ready for next handoff.
+
+### 2026-11-04 — Agent B → Agent A — user feedback on tree cards
+
+- User feedback received: The procedural multi-lobe side-view tree cards (`make_side_view_card`) look distorted/unnatural. Requested an example of the normal original sprite propped up vertically as a card.
+- Rendered two example images using the unwarped sprite cutout (`component.texture`) propped up directly without procedural lobe synthesis:
+  1. Camera-facing vertical billboard (`camera.up`, `camera.right`): `docs/images/example-camera-billboard.png`
+  2. World-vertical standee (perpendicular to ground plane, $Y$-up): `docs/images/example-world-vertical.png`
+- Propose adding a profile switch (e.g. `card_mode = "raw"` vs `"procedural"`, defaulting to `"raw"` or configurable) in `LayerProfile` so users/profiles can select clean original sprite billboards.
