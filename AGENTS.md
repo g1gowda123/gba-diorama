@@ -55,9 +55,11 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   coverage × tile variety, extrudes only layers in front of the ground, and
   crops visible OAM entries from the composited OBJ layer. It also runs
   `relief.py` on the composited ground to cut foliage-colored canopies into
-  upright cards and fill the ground underneath with darkened undergrowth. Billboard profile layers use
-  the same card path. An explicit `SceneProfile` can override the ground, layer
-  roles, heights, and materials.
+  upright cards and fill the ground underneath with surrounding texture. It
+  detects rectangular buildings as `world.structures`, clears their pixels
+  from the ground and overlay layers, and keeps them out of the canopy path.
+  Billboard profile layers use the same card path. An explicit `SceneProfile`
+  can override the ground, layer roles, heights, and materials.
 - `profiles.py`: `SceneSignature`, `ProfileMatch`, `LayerProfile`,
   `SceneProfile`, and `ProfileBook`; TOML profiles match mode/enabled/
   priorities/affine/screen sizes and optional game code.
@@ -67,13 +69,17 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   layers 1/2/3, heights/materials/sprites.
 - `relief.py`: heuristic canopy segmentation (HSV green mask, morphological
   opening, connected components), actual trunk composition, seeded procedural
-  multi-lobe side-view generation, cutout texture, ground ring-fill, and
-  component boxes for shadows.
+  multi-lobe side-view generation, cutout texture, patch-based ground fill, and
+  component boxes for shadows. `detect_structures()` segments large
+  rectangular non-terrain blobs, splits them at the eave, and returns roof/wall
+  art for the house mesher.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
   procedural side-view canopy cards generated from actual canopy/trunk pixels,
   capped to their source footprint, based at its front edge, and rendered as
-  three depth slices (darker/wider back cards) for volume,
-  sprite billboards + shadows; non-square maps keep square pixels.
+  three depth slices (darker/wider back cards) for volume. Buildings become
+  front/side/back wall quads, two gable roof slopes, gable ends, an overhang,
+  and a contact shadow. Also sprite billboards + shadows; non-square maps keep
+  square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
@@ -88,10 +94,10 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
   signature (BG2 ground with automatic canopy cards, BG3 backdrop ignored,
-  BG1 billboard leaves; camera 35°/480/8°).
-- `tests/`: 43 tests covering decode, dump round-trip, profiles, atlas
-  stitching/coverage, parallax, canopy relief/cards, ground compositing, mesh,
-  render, post, fallback, determinism.
+  BG1 fringe art ignored; camera 35°/480/8°).
+- `tests/`: 51 tests covering decode, dump round-trip, profiles, atlas
+  stitching/coverage, parallax, canopy relief/cards, structure extraction and
+  house meshes, ground compositing, mesh, render, post, fallback, determinism.
 
 ## Next tasks (in order)
 
@@ -110,8 +116,9 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 4. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM instead of cropping
    the composited OBJ layer.
 5. **Height heuristics.** E4 prototype is in `relief.py` for green canopy
-   cards; extend it to buildings/rocks/water, non-green props, side-view
-   silhouettes, and collision-learned heights.
+   cards, and P5b buildings now extrude as walls + gable roofs. Extend it to
+   rocks/water, non-green props, side-view silhouettes, and collision-learned
+   heights; validate house detection on a real in-game dump.
 
 ## Style
 

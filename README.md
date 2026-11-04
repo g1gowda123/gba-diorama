@@ -37,6 +37,15 @@ with small patches of the surrounding ground texture, preserving the map's
 grass, path, and palette instead of leaving a flat glowing hole. No synthetic
 trunk, sprite atlas, or hand-placed tree is used.
 
+Buildings use the same map-aware path. A generic detector finds large
+rectangular non-terrain components, splits each at the strongest horizontal
+colour break (the eave), and extrudes the result as front/side/back walls plus
+two gable roof slopes, gable ends, an overhang, and a contact shadow. The
+game's own door and window pixels stay on the facade, and the roof art is laid
+on the slopes. The flat building footprint is cleared with the same patch fill,
+so the house is never drawn twice. No per-game building IDs or hand-authored
+meshes are involved.
+
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
 

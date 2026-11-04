@@ -149,9 +149,11 @@ with different layer semantics; romhack tilesets that break color heuristics.
 **Status:** prototype. `relief.py` detects multi-tile green canopies, composes
 actual trunk pixels, and generates procedural side-view cards; `mesh.py` adds
 depth slices and shadows. The current Route 101 render uses BG2 for trees.
-Houses are designed in `docs/OFFLINE-MAP-COMPILER.md` but not implemented yet.
-No ML is required for this path; ML remains an optional offline fallback for
-ambiguous romhack art.
+`detect_structures()` and `mesh._add_structures()` implement the runtime P5b
+house path: rectangular non-terrain blobs are split at the eave and extruded
+as walls plus a gable roof with an overhang. Validated on an offline
+Littleroot BG dump; a real in-game dump is still needed. No ML is required for
+this path; ML remains an optional offline fallback for ambiguous romhack art.
 
 ## E5 — Sprite slabs + shadows
 

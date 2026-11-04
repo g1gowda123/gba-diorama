@@ -200,6 +200,13 @@ Occlusion:
 For multi-tile houses, detect the whole footprint first, then split roof/wall.
 Do not detect individual 8x8 tiles as separate houses.
 
+Runtime prototype: `relief.detect_structures()` implements the rectangle
+segmentation and eave split; `mesh._add_structures()` builds the walls, two
+gable roof slopes, gable ends, overhang, and contact shadow. It currently uses
+the facade's edge strips for side/back walls, so dedicated side-wall tiles are
+still an open improvement. The compiler can reuse the same detector and store
+the resulting textures/geometry in the per-map manifest.
+
 ### P6. Pack and store
 
 Suggested cache layout:
