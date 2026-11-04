@@ -16,6 +16,7 @@ from PIL import Image
 
 from .gba import TextBg, decode_oam_entry, decode_text_bg
 from .profiles import SceneProfile
+from .relief import build_canopy_field, detect_canopies
 
 LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
 
@@ -326,6 +327,10 @@ class DumpWorld:
     sprites: list = field(default_factory=list)
     ground_layer: int = 3
     profile: SceneProfile | None = None
+    canopy_present: np.ndarray | None = None
+    canopy_height: np.ndarray | None = None
+    canopy_texture: np.ndarray | None = None
+    canopy_shadows: list[tuple[int, int, int, int]] = field(default_factory=list)
 
     @classmethod
     def from_dump(
@@ -373,6 +378,21 @@ class DumpWorld:
 
         ground = _composite_behind(dump, ground_index, dump.layers[ground_index])
         h, w = ground.shape[:2]
+        canopy_present = None
+        canopy_height = None
+        canopy_texture = None
+        canopy_shadows: list[tuple[int, int, int, int]] = []
+        if h % 8 == 0 and w % 8 == 0:
+            canopy = build_canopy_field(
+                ground,
+                detect_canopies(ground),
+            )
+            if canopy is not None:
+                canopy_present = canopy.present
+                canopy_height = canopy.heights
+                canopy_texture = canopy.texture
+                canopy_shadows = [component.bbox for component in canopy.components]
+                ground = canopy.ground
         if h % 8 or w % 8:
             raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
         cells = (h // 8, w // 8)
@@ -463,6 +483,10 @@ class DumpWorld:
             sprites=sprites,
             ground_layer=ground_index,
             profile=profile,
+            canopy_present=canopy_present,
+            canopy_height=canopy_height,
+            canopy_texture=canopy_texture,
+            canopy_shadows=canopy_shadows,
         )
 
     def ground_height(self, x: float, z: float) -> float:

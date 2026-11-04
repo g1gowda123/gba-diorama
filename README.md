@@ -20,11 +20,13 @@ The first real result comes from an mGBA dump of Pokémon Emerald's Route 101:
 The dump loader picked BG2 as the ground from layer content (BG3 is a
 low-detail backdrop in this scene), composited the backdrop into transparent
 holes, cropped the player out of the OBJ layer, and rendered it as a billboard
-on a tilted plinth. The example profile opts into a naive constant-height
-extrusion of the sparse BG1 canopy; generic renders still skip sparse overlays
-until height inference can separate tree canopies from buildings, and
-`--all-layers` shows the unprofiled version. This image was re-rendered after
-fixing the OBJ vertical flip; both the BG and OBJ FBOs are top-down.
+on a tilted plinth. It also detects saturated-green canopy regions in BG2,
+separates touching trees with a morphological opening, lifts each component
+into a small heightfield with side walls and contact shadows, and fills the
+ground underneath so the tree is not drawn twice. BG1 remains an optional
+sparse overlay; `--all-layers` shows the unprofiled version. This image was
+re-rendered after fixing the OBJ vertical flip; both the BG and OBJ FBOs are
+top-down.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
@@ -196,6 +198,9 @@ sparse-overlay skip.
   to write layer PNGs from a dump.
 - Real mGBA dump rendering: content-based ground selection, non-square world
   extents, and OBJ-layer sprites cropped from OAM entries.
+- Canopy relief from BG2: saturated-green component detection, morphological
+  splitting of touching trees, a 4px heightfield with side walls, ground
+  fill-under, and contact shadows.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
 - Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size
@@ -203,7 +208,7 @@ sparse-overlay skip.
   distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 37 tests.
+- Deterministic CLI and 39 tests.
 
 ## What is not done yet
 
@@ -212,12 +217,16 @@ sparse-overlay skip.
 - No affine BG, bitmap BG, windows, mosaic, or GBA alpha/brightness effects.
 - Real sprites are cropped from the composited OBJ layer; OAM/OBJ tile decoding
   is still a primitive, not a full per-sprite renderer.
-- Sparse foreground layers are skipped by default until height inference can
-  tell tree canopies from buildings.
+- Canopy relief is a green-color heuristic, not semantic understanding: it does
+  not yet separate trees from green buildings, and 4px cells read as terraced
+  foliage rather than organic silhouettes.
+- Sparse foreground layers are still skipped by default until height inference
+  can tell tree canopies from buildings.
 - Profiles are opt-in (`--profile`); there is no automatic profile discovery or
   debug overlay yet.
-- No temporal world atlas; the camera is intentionally mild so missing
-  off-screen pixels are not obvious.
+- The atlas is offline only; it does not yet invalidate changed VRAM or capture
+  a sequence automatically. The camera stays mild so missing off-screen pixels
+  are not obvious.
 - The rasterizer is CPU-side and meant for iteration, not real-time emulator
   output.
 
@@ -230,6 +239,7 @@ gba_diorama/
   profiles.py    scene signatures + data-only TOML layer profiles
   inspect.py     dump -> per-layer PNGs
   synthetic.py   synthetic GBA-format world (the test fixture)
+  relief.py      canopy detection, cutout field, ground fill-under
   mesh.py        heightfields, side walls, plinth, sprite billboards
   raster.py      software 3D rasterizer
   post.py        bloom / tilt-shift / vignette / grade

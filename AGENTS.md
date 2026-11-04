@@ -53,8 +53,10 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `dump.py`: loads/exports the mGBA dump format, decodes tilemaps from VRAM,
   and provides a `DumpWorld` adapter. Ground selection scores BG1–BG3 by alpha
   coverage × tile variety, extrudes only layers in front of the ground, and
-  crops visible OAM entries from the composited OBJ layer. An explicit
-  `SceneProfile` can override the ground, layer roles, heights, and materials.
+  crops visible OAM entries from the composited OBJ layer. It also runs
+  `relief.py` on the composited ground to lift saturated-green canopies and
+  fill the ground underneath. An explicit `SceneProfile` can override the
+  ground, layer roles, heights, and materials.
 - `profiles.py`: `SceneSignature`, `ProfileMatch`, `LayerProfile`,
   `SceneProfile`, and `ProfileBook`; TOML profiles match mode/enabled/
   priorities/affine/screen sizes and optional game code.
@@ -62,8 +64,11 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   PNGs.
 - `synthetic.py`: 64×64 synthetic overworld, real GBA VRAM/tilemaps, decoded
   layers 1/2/3, heights/materials/sprites.
+- `relief.py`: heuristic canopy segmentation (HSV green mask, morphological
+  opening, connected components), a 4px cutout heightfield, ground fill-under,
+  and component boxes for shadows.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
-  sprite billboards + shadows; non-square maps keep square pixels.
+  canopy relief, sprite billboards + shadows; non-square maps keep square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
@@ -77,11 +82,11 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   confidence value from a dump sequence. Not yet wired into mesh heights.
 - `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
-  signature (BG2 ground, BG3 backdrop ignored, BG1 canopy at a naive constant
-  height).
-- `tests/`: 37 tests covering decode, dump round-trip, profiles, atlas
-  stitching/coverage, parallax, ground compositing, mesh, render, post,
-  fallback, determinism.
+  signature (BG2 ground with automatic canopy relief, BG3 backdrop ignored,
+  BG1 optional constant-height foreground; camera 30°/560/8°).
+- `tests/`: 39 tests covering decode, dump round-trip, profiles, atlas
+  stitching/coverage, parallax, canopy relief, ground compositing, mesh,
+  render, post, fallback, determinism.
 
 ## Next tasks (in order)
 
@@ -99,8 +104,9 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
    fallback, add resize/deinit hooks.
 4. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM instead of cropping
    the composited OBJ layer.
-5. **Height heuristics.** Implement E4: tile classification, canopy vs. building,
-   and collision-learned heights.
+5. **Height heuristics.** E4 prototype is in `relief.py` for green canopies;
+   extend it to buildings/rocks/water, organic silhouettes, and
+   collision-learned heights.
 
 ## Style
 

@@ -137,6 +137,7 @@ def _add_layer(
     *,
     alpha_test: bool,
     name: str,
+    tile: int = TILE,
 ) -> None:
     img_h, img_w = image.shape[:2]
     # Keep pixels square for non-square dumps.  WORLD_PX becomes the size of
@@ -153,10 +154,10 @@ def _add_layer(
 
     # Top faces: one merged rectangle per equal-height island.
     for tx, ty, tw, th, h in _greedy_rects(present, heights):
-        x0 = tx * TILE * sx
-        x1 = (tx + tw) * TILE * sx
-        z0 = ty * TILE * sz
-        z1 = (ty + th) * TILE * sz
+        x0 = tx * tile * sx
+        x1 = (tx + tw) * tile * sx
+        z0 = ty * tile * sz
+        z1 = (ty + th) * tile * sz
         _quad(
             out,
             np.array([x0, h, z0], dtype=np.float32),
@@ -184,10 +185,10 @@ def _add_layer(
                 mat = "stone"
             wall_tex = side_tex[mat]
 
-            x0 = tx * TILE * sx
-            x1 = (tx + 1) * TILE * sx
-            z0 = ty * TILE * sz
-            z1 = (ty + 1) * TILE * sz
+            x0 = tx * tile * sx
+            x1 = (tx + 1) * tile * sx
+            z0 = ty * tile * sz
+            z1 = (ty + 1) * tile * sz
 
             for dx, dz, normal in (
                 (-1, 0, (-1.0, 0.0, 0.0)),
@@ -463,6 +464,38 @@ def _add_sprites(out: list[Triangle], world: SyntheticWorld, camera: Camera) -> 
         )
 
 
+def _add_canopy_shadows(out: list[Triangle], world: SyntheticWorld) -> None:
+    shadows = getattr(world, "canopy_shadows", None)
+    texture = getattr(world, "canopy_texture", None)
+    if not shadows or texture is None:
+        return
+    img_h, img_w = texture.shape[:2]
+    scale = WORLD_PX / max(img_w, img_h)
+    shadow_tex = Texture(make_shadow_texture(32), name="canopy-shadow")
+    for x0, y0, x1, y1 in shadows:
+        cx = (x0 + x1) * 0.5 * scale
+        cz = (y0 + y1) * 0.5 * scale
+        half_w = max(5.0, (x1 - x0) * scale * 0.55)
+        half_d = max(4.0, (y1 - y0) * scale * 0.45)
+        y = world.ground_height(cx, cz) + 0.06
+        _quad(
+            out,
+            np.array([cx - half_w, y, cz - half_d], dtype=np.float32),
+            np.array([cx + half_w, y, cz - half_d], dtype=np.float32),
+            np.array([cx + half_w, y, cz + half_d], dtype=np.float32),
+            np.array([cx - half_w, y, cz + half_d], dtype=np.float32),
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0),
+            shadow_tex,
+            blend=True,
+            depth_write=False,
+            fog=False,
+            name="canopy-shadow",
+        )
+
+
 def scene_extent(world: SyntheticWorld) -> tuple[float, float]:
     """Return the world-space (width, depth) used by :func:`build_scene`."""
 
@@ -488,6 +521,31 @@ def build_scene(world: SyntheticWorld, camera: Camera) -> Scene:
         alpha_test=False,
         name=f"BG{ground_layer}-ground",
     )
+    _add_canopy_shadows(triangles, world)
+
+    canopy_present = getattr(world, "canopy_present", None)
+    canopy_texture = getattr(world, "canopy_texture", None)
+    canopy_height = getattr(world, "canopy_height", None)
+    if canopy_present is not None and canopy_texture is not None and canopy_height is not None:
+        canopy_base = world.terrain_height
+        if canopy_base.shape != canopy_present.shape:
+            fy = canopy_present.shape[0] // canopy_base.shape[0]
+            fx = canopy_present.shape[1] // canopy_base.shape[1]
+            canopy_base = np.repeat(np.repeat(canopy_base, fy, axis=0), fx, axis=1)
+        _add_layer(
+            triangles,
+            world,
+            ground_layer,
+            canopy_texture,
+            canopy_present,
+            canopy_height,
+            canopy_base,
+            np.full(canopy_present.shape, "canopy", dtype=object),
+            alpha_test=True,
+            name=f"BG{ground_layer}-canopy",
+            tile=4,
+        )
+
     layer_names = {2: "BG2-mid", 1: "BG1-top"}
     for index in sorted(world.layer_present, reverse=True):
         name = layer_names.get(index, f"BG{index}-layer")

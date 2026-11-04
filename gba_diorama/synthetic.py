@@ -341,6 +341,7 @@ SIDE_TEXTURES: dict[str, np.ndarray] = {
     "wood": _side_texture((168, 122, 74), (92, 62, 36), "wood", 16),
     "water": _side_texture((47, 127, 196), (24, 68, 126), "water", 17),
     "grass": _side_texture((76, 142, 58), (40, 86, 38), "grass", 18),
+    "canopy": _side_texture((44, 96, 40), (18, 48, 20), "grass", 21),
     "stone": _side_texture((118, 118, 130), (64, 64, 76), "rock", 19),
     "stone_dark": _side_texture((78, 78, 92), (38, 38, 48), "rock", 20),
 }

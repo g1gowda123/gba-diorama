@@ -103,8 +103,12 @@ same path. Affine/bitmap modes are deliberately rejected.
 **Risks:** over-extruding flat decoration; misclassifying water; battle scenes
 with different layer semantics.
 
-**Status:** later. The synthetic world currently authors heights directly so the
-meshing/raster path can be developed independently.
+**Status:** prototype. `relief.py` implements the narrow green-canopy case:
+HSV selection, morphological splitting, 4px cutout cells, neighbor-coverage
+height, ground fill-under, and contact shadows. The general per-cell classifier
+(buildings, rocks, water, non-green props) is still later. The synthetic world
+continues to author heights directly so the meshing/raster path can be
+developed independently.
 
 ## E5 — Sprite slabs + shadows
 

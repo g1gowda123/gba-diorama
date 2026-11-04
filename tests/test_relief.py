@@ -1,0 +1,35 @@
+import numpy as np
+
+from gba_diorama.relief import build_canopy_field, detect_canopies
+
+
+def _scene() -> np.ndarray:
+    image = np.zeros((64, 64, 4), dtype=np.uint8)
+    image[..., :3] = (112, 192, 160)
+    image[..., 3] = 255
+    # Two tree canopies joined by a one-pixel dark bridge.  Opening should
+    # split them instead of producing one long hedge.
+    image[8:24, 8:24, :3] = (40, 120, 40)
+    image[8:24, 26:42, :3] = (40, 120, 40)
+    image[16, 24:26, :3] = (30, 70, 20)
+    return image
+
+
+def test_detect_canopies_splits_touching_blobs():
+    components = detect_canopies(_scene())
+    assert len(components) == 2
+    assert all(component.area >= 48 for component in components)
+
+
+def test_canopy_field_has_volume_and_removes_tree_from_ground():
+    image = _scene()
+    components = detect_canopies(image)
+    field = build_canopy_field(image, components)
+    assert field is not None
+    assert field.present.any()
+    assert field.heights.max() > field.heights.min()
+    # The tree art is moved into the cutout texture; the ground is filled
+    # with surrounding grass so the raised canopy does not get drawn twice.
+    assert tuple(field.ground[16, 16, :3]) == (112, 192, 160)
+    assert field.texture[16, 16, 3] == 255
+    assert field.texture[0, 0, 3] == 0
