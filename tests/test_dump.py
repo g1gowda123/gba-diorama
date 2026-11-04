@@ -188,3 +188,30 @@ def test_obj_sprite_tight_crop_removes_transparent_padding():
     assert sprite.z == (12 + 32) * 0.5 * scale
     assert sprite.width == 16 * scale
     assert sprite.height == 20 * scale
+
+
+def test_dumpworld_extracts_house_from_foreground_layer():
+    h, w = 64, 64
+    ground = np.zeros((h, w, 4), dtype=np.uint8)
+    ground[..., :3] = (112, 192, 160)
+    ground[..., 3] = 255
+    bg2 = np.zeros((h, w, 4), dtype=np.uint8)
+    bg2[16:36, 16:48, :3] = (60, 90, 180)  # roof
+    bg2[16:36, 16:48, 3] = 255
+    bg2[36:52, 16:48, :3] = (200, 205, 215)  # facade
+    bg2[36:52, 16:48, 3] = 255
+    bg2[42:50, 28:36, :3] = (50, 70, 110)  # door
+    bg2[42:50, 28:36, 3] = 255
+    bg1 = np.zeros((h, w, 4), dtype=np.uint8)
+
+    world = DumpWorld.from_dump(_fake_dump({1: bg1, 2: bg2, 3: ground}))
+    assert len(world.structures) == 1
+    structure = world.structures[0]
+    assert structure.bbox == (16, 16, 48, 52)
+    assert 32 <= structure.eave_y <= 40
+    # The building is lifted as a mesh, not extruded a second time as a BG2
+    # overlay slab.
+    assert not world.layer_present[2].any()
+    # The flat house is removed from the ground texture.
+    ground_pixels = world.layers[3]
+    assert not np.all(ground_pixels[20, 20, :3] == (60, 90, 180))

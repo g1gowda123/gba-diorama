@@ -457,15 +457,21 @@ class DumpWorld:
                 if profile is not None
                 else LayerProfile(ground_index, role="ground")
             )
-            # Unify multi-layer metatiles (e.g. BG1 treetops + BG2 trunks)
-            # so the object detector segments whole trees rather than severed fragments.
+            # Unify every layer in front of the ground (e.g. BG1 treetops +
+            # BG2 trunks/houses) so the detectors segment whole objects rather
+            # than severed fragments.  Composite front-to-back so BG1 wins
+            # where it overlaps BG2.
             fg_image = None
-            for fg_idx in range(ground_index):
-                if fg_idx in dump.layers:
-                    cand = dump.layers[fg_idx]
-                    if cand.shape[:2] == (h, w) and np.any(cand[..., 3] > 0):
-                        fg_image = cand
-                        break
+            for fg_idx in range(ground_index - 1, 0, -1):
+                if fg_idx not in dump.layers:
+                    continue
+                cand = dump.layers[fg_idx]
+                if cand.shape[:2] != (h, w) or not np.any(cand[..., 3] > 0):
+                    continue
+                if fg_image is None:
+                    fg_image = np.zeros_like(cand)
+                fg_mask = cand[..., 3] > 0
+                fg_image[fg_mask] = cand[fg_mask]
 
             unified_ground = ground.copy()
             if fg_image is not None:

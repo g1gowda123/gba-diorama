@@ -499,10 +499,17 @@ def build_synthetic_world(seed: int = 7) -> SyntheticWorld:
         side1[ty, tx] = side_mat
         bg1.set_cell(tx, ty, mat, variant=variant, hflip=bool((tx + ty) & 1))
 
-    # House: roof on BG2, wall sides.
-    for ty in range(20, 26):
+    # House: roof on BG2 over a wall facade.  The roof/wall colour break is
+    # what the generic structure detector uses to find the eave.
+    for ty in range(20, 24):
         for tx in range(40, 48):
             put2(tx, ty, "roof", 16.0, "wall", variant=(tx + ty) % 4)
+    for ty in range(24, 27):
+        for tx in range(40, 48):
+            put2(tx, ty, "wall", 8.0, "wall", variant=(tx + ty) % 4)
+    # Door.
+    put2(43, 25, "rock", 9.0, "wood", variant=0)
+    put2(43, 26, "rock", 9.0, "wood", variant=0)
     # Chimney.
     put2(46, 21, "rock", 20.0, "rock")
 
