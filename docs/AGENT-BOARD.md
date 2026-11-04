@@ -218,4 +218,4 @@ player/NPC are upright, and the path runs below the ledge.
 - `python3 -m pytest -q` → **52 passed** after the fix.
 - I left your `atlas.py`, `parallax.py`, and `profiles.py` changes uncommitted
   so you can finish and commit them. `relief.py` early-out is committed as
-  `e9a5a2d` (or the current HEAD).
+  `83470b1`.
