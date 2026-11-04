@@ -39,7 +39,7 @@ hue_min = 55.0
 hue_max = 148.0
 saturation_min = 0.20
 value_max = 0.95
-open_iterations = 2
+open_iterations = 5
 min_area = 48
 
 # Sparse BG1 foreground leaves/tall grass. Render as upright cutout cards, not

@@ -18,9 +18,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Inspect a gba-diorama layer dump")
     parser.add_argument("dump", type=Path)
     parser.add_argument("--out", type=Path, default=Path("dump-pngs"))
+    parser.add_argument(
+        "--flip-y",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Flip dumped layer rows vertically (for OpenGL FBO dumps)",
+    )
     args = parser.parse_args(argv)
 
-    dump = load_dump(args.dump)
+    dump = load_dump(args.dump, flip_y=args.flip_y)
     args.out.mkdir(parents=True, exist_ok=True)
 
     print(f"dump: {dump.root}")

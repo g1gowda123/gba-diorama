@@ -20,6 +20,7 @@ from .relief import (
     build_canopy_field,
     detect_alpha_objects,
     detect_canopies,
+    detect_procedural_objects,
 )
 
 LAYER_NAMES = {3: "bg3", 2: "bg2", 1: "bg1", 0: "bg0"}
@@ -89,7 +90,7 @@ def layer_scroll(dump: GbaDump, index: int) -> tuple[int, int]:
     return x, y
 
 
-def load_dump(root: str | Path) -> GbaDump:
+def load_dump(root: str | Path, *, flip_y: bool | None = None) -> GbaDump:
     root = Path(root)
     meta_path = root / "meta.json"
     if not meta_path.exists():
@@ -115,7 +116,8 @@ def load_dump(root: str | Path) -> GbaDump:
     scale = int(meta.get("scale", 1))
     screen_size = (int(screen[0]) * scale, int(screen[1]) * scale)
     layer_size = tuple(meta.get("layer_size", screen_size))
-    flip_y = bool(meta.get("flip_y", False))
+    if flip_y is None:
+        flip_y = bool(meta.get("flip_y", False))
 
     layers: dict[int, np.ndarray] = {}
     bgcnt = meta.get("bgcnt", [])
@@ -249,26 +251,37 @@ def _extract_obj_sprites(dump: GbaDump, width: int, height: int, scale: float) -
         return []
 
     sprites: list[DumpSprite] = []
+    dump_scale = dump.meta.get("scale", 1)
     for index in range(min(128, len(dump.oam) // 8)):
         entry = decode_oam_entry(dump.oam[index * 8 : (index + 1) * 8], index)
         if entry is None:
             continue
-        x0 = max(0, entry.x * dump.meta.get("scale", 1))
-        y0 = max(0, entry.y * dump.meta.get("scale", 1))
-        x1 = min(width, (entry.x + entry.width) * dump.meta.get("scale", 1))
-        y1 = min(height, (entry.y + entry.height) * dump.meta.get("scale", 1))
+        x0 = max(0, entry.x * dump_scale)
+        y0 = max(0, entry.y * dump_scale)
+        x1 = min(width, (entry.x + entry.width) * dump_scale)
+        y1 = min(height, (entry.y + entry.height) * dump_scale)
         if x1 <= x0 or y1 <= y0:
             continue
-        crop = obj[y0:y1, x0:x1]
-        if not np.any(crop[..., 3]):
+        raw_crop = obj[y0:y1, x0:x1]
+        if not np.any(raw_crop[..., 3]):
             continue
+
+        # Tight cropping to actual opaque sprite pixels to eliminate empty margins
+        # and ground the sprite cleanly at its feet.
+        ys, xs = np.nonzero(raw_crop[..., 3] > 0)
+        tx0 = x0 + int(xs.min())
+        tx1 = x0 + int(xs.max()) + 1
+        ty0 = y0 + int(ys.min())
+        ty1 = y0 + int(ys.max()) + 1
+        tight_crop = raw_crop[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+
         sprites.append(
             DumpSprite(
-                texture=crop.copy(),
-                x=(x0 + x1) * 0.5 * scale,
-                z=(y0 + y1) * 0.5 * scale,
-                width=(x1 - x0) * scale,
-                height=(y1 - y0) * scale,
+                texture=tight_crop.copy(),
+                x=(tx0 + tx1) * 0.5 * scale,
+                z=(ty0 + ty1) * 0.5 * scale,
+                width=(tx1 - tx0) * scale,
+                height=(ty1 - ty0) * scale,
                 kind="player",
             )
         )
@@ -312,13 +325,12 @@ def _composite_behind(
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def _detect_objects(image: np.ndarray, layer: LayerProfile):
-    """Run the layer's configured object detector.
-
-    Green is the default because most top-down overworld foliage is saturated
-    green, but profiles can switch to alpha for foreground layers or tune the
-    HSV range for a romhack with autumn/snow/alien trees.
-    """
+def _detect_objects(
+    image: np.ndarray,
+    layer: LayerProfile,
+    foreground: np.ndarray | None = None,
+):
+    """Run the layer's configured object detector with procedural fallback."""
 
     if layer.detector == "alpha":
         return detect_alpha_objects(
@@ -326,7 +338,13 @@ def _detect_objects(image: np.ndarray, layer: LayerProfile):
             min_alpha=layer.min_alpha,
             min_area=layer.min_area,
         )
-    return detect_canopies(
+    if layer.detector == "procedural":
+        return detect_procedural_objects(
+            image,
+            foreground=foreground,
+            min_area=layer.min_area,
+        )
+    comps = detect_canopies(
         image,
         min_area=layer.min_area,
         hue_min=layer.hue_min,
@@ -335,6 +353,13 @@ def _detect_objects(image: np.ndarray, layer: LayerProfile):
         value_max=layer.value_max,
         open_iterations=layer.open_iterations,
     )
+    if not comps and foreground is not None:
+        comps = detect_procedural_objects(
+            image,
+            foreground=foreground,
+            min_area=layer.min_area,
+        )
+    return comps
 
 
 @dataclass
@@ -427,11 +452,28 @@ class DumpWorld:
                 if profile is not None
                 else LayerProfile(ground_index, role="ground")
             )
-            components = _detect_objects(ground, ground_profile)
+            # Unify multi-layer metatiles (e.g. BG1 treetops + BG2 trunks)
+            # so the object detector segments whole trees rather than severed fragments.
+            fg_image = None
+            for fg_idx in range(ground_index):
+                if fg_idx in dump.layers:
+                    cand = dump.layers[fg_idx]
+                    if cand.shape[:2] == (h, w) and np.any(cand[..., 3] > 0):
+                        fg_image = cand
+                        break
+
+            unified_ground = ground.copy()
+            if fg_image is not None:
+                fg_mask = fg_image[..., 3] > 0
+                unified_ground[fg_mask] = fg_image[fg_mask]
+
+            components = _detect_objects(
+                unified_ground, ground_profile, foreground=fg_image
+            )
             # A uniform green field is not a forest.  Only lift components
             # when they cover a plausible fraction of the world layer.
             if components and sum(c.area for c in components) < 0.40 * h * w:
-                canopy = build_canopy_field(ground, components)
+                canopy = build_canopy_field(unified_ground, components)
                 if canopy is not None:
                     canopy_present = canopy.present
                     canopy_height = canopy.heights
@@ -488,6 +530,24 @@ class DumpWorld:
                     continue
                 if layer.billboard:
                     components = _detect_objects(image, layer)
+                    # Filter out foreground components that were already unified
+                    # into ground tree canopy cards.
+                    if canopy_shadows:
+                        filtered = []
+                        for comp in components:
+                            cx0, cy0, cx1, cy1 = comp.bbox
+                            is_dup = False
+                            for sx0, sy0, sx1, sy1 in canopy_shadows:
+                                ox0, oy0 = max(cx0, sx0), max(cy0, sy0)
+                                ox1, oy1 = min(cx1, sx1), min(cy1, sy1)
+                                if ox1 > ox0 and oy1 > oy0:
+                                    if (ox1 - ox0) * (oy1 - oy0) >= 0.5 * comp.area:
+                                        is_dup = True
+                                        break
+                            if not is_dup:
+                                filtered.append(comp)
+                        components = filtered
+
                     area = image.shape[0] * image.shape[1]
                     if components and sum(c.area for c in components) < 0.40 * area:
                         field = build_canopy_field(image, components)

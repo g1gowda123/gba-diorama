@@ -132,15 +132,19 @@ def _inpaint_ring(
         pixels = image[ring, :3]
         if not len(pixels):
             continue
+        # Filter out extreme dark shadow/outline pixels to sample clean terrain:
+        if len(pixels) > 10:
+            lum = pixels.mean(axis=-1)
+            bright = lum > np.percentile(lum, 15)
+            if bright.any():
+                pixels = pixels[bright]
         rng = np.random.default_rng((x0 * 73856093) ^ (y0 * 19349663))
         picks = rng.integers(0, len(pixels), size=int(fill.sum()))
-        # Blend the local median with ring samples: a pure random fill turns
-        # into bright confetti, while a pure median becomes a flat teal block.
         base = np.median(pixels, axis=0)
-        # Darken the cleared footprint into undergrowth/shadow.  A bright
-        # grass fill reads as an empty hole once the canopy is lifted.
-        fill_rgb = 0.45 * base + 0.55 * pixels[picks]
-        out[fill, :3] = np.clip(fill_rgb * 0.72, 0, 255).astype(np.uint8)
+        # Smoothly blend base terrain with texture variations, gently shaded
+        # into undergrowth so it reads cleanly without muddy confetti.
+        fill_rgb = 0.70 * base + 0.30 * pixels[picks]
+        out[fill, :3] = np.clip(fill_rgb * 0.85, 0, 255).astype(np.uint8)
         out[fill, 3] = 255
     return out
 
@@ -203,9 +207,9 @@ def _attach_trunk(
     # growth already swallowed the trunk.  Split the existing bbox instead of
     # searching below it, otherwise the component loses its texture.
     local_brown = (
-        (hue[y0:y1, x0:x1] < 70.0)
-        & (saturation[y0:y1, x0:x1] > 0.08)
-        & (value[y0:y1, x0:x1] < 0.62)
+        ((hue[y0:y1, x0:x1] < 70.0) | (hue[y0:y1, x0:x1] > 310.0))
+        & (saturation[y0:y1, x0:x1] > 0.06)
+        & (value[y0:y1, x0:x1] < 0.65)
     )
     brown_rows = local_brown.any(axis=1)
     if len(brown_rows) and brown_rows[-1]:
@@ -227,11 +231,11 @@ def _attach_trunk(
         return bbox, mask, _canopy_texture(image, bbox, mask, y1 - y0), y1 - y0
 
     region = (slice(y1, search_y1), slice(rx0, rx1))
-    # Brown/grey trunk: low hue, low-ish value, not the bright green canopy.
+    # Brown/grey trunk: low or wrap-around hue, not the bright green canopy.
     trunk = (
-        (hue[region] < 70.0)
-        & (saturation[region] > 0.08)
-        & (value[region] < 0.62)
+        ((hue[region] < 70.0) | (hue[region] > 310.0))
+        & (saturation[region] > 0.06)
+        & (value[region] < 0.65)
     )
     if not trunk.any():
         return bbox, mask, _canopy_texture(image, bbox, mask, y1 - y0), y1 - y0
@@ -283,7 +287,7 @@ def _attach_trunk(
     new_h = canopy_h + trunk_h
     new_mask = np.zeros((new_h, x1 - x0), dtype=bool)
     new_mask[:canopy_h, :] = mask
-    offset_x = max(0, ((x1 - x0) - trunk_w) // 2)
+    offset_x = max(0, min(x1 - x0 - trunk_w, tx0 - x0))
     new_mask[canopy_h:new_h, offset_x : offset_x + trunk_w] |= trunk[
         ty0 - y1 : ty1 - y1, tx0 - rx0 : tx1 - rx0
     ]
@@ -322,107 +326,111 @@ def detect_canopies(
     )
     if not mask.any():
         return []
+    raw_mask = mask.copy()
     if open_iterations:
         # Tree canopies often touch through one-pixel dark outlines.  Opening
         # breaks those bridges so each tree becomes its own volume.
-        mask = _morph(mask, erode=True, iterations=open_iterations)
-        mask = _morph(mask, erode=False, iterations=open_iterations)
-    if not mask.any():
+        opened = _morph(raw_mask, erode=True, iterations=open_iterations)
+        opened = _morph(opened, erode=False, iterations=open_iterations)
+    else:
+        opened = raw_mask
+    if not opened.any():
         return []
 
     height, width = mask.shape
-    seen = np.zeros_like(mask, dtype=bool)
-    components: list[CanopyComponent] = []
+    labels = np.zeros((height, width), dtype=int)
+    label_id = 1
+    seed_queue: deque[tuple[int, int]] = deque()
     for y in range(height):
         for x in range(width):
-            if not mask[y, x] or seen[y, x]:
+            if not opened[y, x] or labels[y, x] > 0:
                 continue
-            queue: deque[tuple[int, int]] = deque([(y, x)])
-            seen[y, x] = True
-            pixels: list[tuple[int, int]] = []
-            min_x = max_x = x
-            min_y = max_y = y
-            while queue:
-                cy, cx = queue.popleft()
-                pixels.append((cy, cx))
-                min_x = min(min_x, cx)
-                max_x = max(max_x, cx)
-                min_y = min(min_y, cy)
-                max_y = max(max_y, cy)
+            q: deque[tuple[int, int]] = deque([(y, x)])
+            labels[y, x] = label_id
+            seed_queue.append((y, x))
+            while q:
+                cy, cx = q.popleft()
                 for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                     ny, nx = cy + dy, cx + dx
                     if (
                         0 <= ny < height
                         and 0 <= nx < width
-                        and mask[ny, nx]
-                        and not seen[ny, nx]
+                        and opened[ny, nx]
+                        and labels[ny, nx] == 0
                     ):
-                        seen[ny, nx] = True
+                        labels[ny, nx] = label_id
+                        q.append((ny, nx))
+                        seed_queue.append((ny, nx))
+            label_id += 1
+
+    components: list[CanopyComponent] = []
+    for cid in range(1, label_id):
+        ys, xs = np.nonzero(labels == cid)
+        if len(ys) < min_area:
+            continue
+        min_x = int(xs.min())
+        max_x = int(xs.max())
+        min_y = int(ys.min())
+        max_y = int(ys.max())
+        bbox_w = max_x - min_x + 1
+        bbox_h = max_y - min_y + 1
+        if bbox_w < 10 or bbox_h < 10:
+            continue
+        component_mask = (labels[min_y : max_y + 1, min_x : max_x + 1] == cid)
+
+        # The canopy is usually drawn above a small dark trunk.  Extend
+        # only downward through a narrow center band, otherwise dark
+        # outlines/shadows connect adjacent trees into tall columns.
+        pad_y = max(4, bbox_h // 3)
+        ey1 = min(height, max_y + 1 + pad_y)
+        local = np.zeros((ey1 - min_y, bbox_w), dtype=bool)
+        local[:bbox_h, :] = component_mask
+        allowed = local | (value[min_y:ey1, min_x : max_x + 1] < 0.62)
+        grown = local.copy()
+        queue = deque(zip(*np.nonzero(local)))
+        while queue:
+            cy, cx = queue.popleft()
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    ny, nx = cy + dy, cx + dx
+                    if (
+                        0 <= ny < grown.shape[0]
+                        and 0 <= nx < grown.shape[1]
+                        and allowed[ny, nx]
+                        and not grown[ny, nx]
+                    ):
+                        grown[ny, nx] = True
                         queue.append((ny, nx))
 
-            if len(pixels) < min_area:
-                continue
-            bbox_w = max_x - min_x + 1
-            bbox_h = max_y - min_y + 1
-            if bbox_w < 10 or bbox_h < 10:
-                continue
-            component_mask = np.zeros((bbox_h, bbox_w), dtype=bool)
-            for py, px in pixels:
-                component_mask[py - min_y, px - min_x] = True
-
-            # The canopy is usually drawn above a small dark trunk.  Extend
-            # only downward through a narrow center band, otherwise dark
-            # outlines/shadows connect adjacent trees into tall columns.
-            pad_y = max(4, bbox_h // 3)
-            ey1 = min(height, max_y + 1 + pad_y)
-            local = np.zeros((ey1 - min_y, bbox_w), dtype=bool)
-            local[:bbox_h, :] = component_mask
-            allowed = local | (value[min_y:ey1, min_x : max_x + 1] < 0.62)
-            grown = local.copy()
-            queue = deque(zip(*np.nonzero(local)))
-            while queue:
-                cy, cx = queue.popleft()
-                for dy in (-1, 0, 1):
-                    for dx in (-1, 0, 1):
-                        if dx == 0 and dy == 0:
-                            continue
-                        ny, nx = cy + dy, cx + dx
-                        if (
-                            0 <= ny < grown.shape[0]
-                            and 0 <= nx < grown.shape[1]
-                            and allowed[ny, nx]
-                            and not grown[ny, nx]
-                        ):
-                            grown[ny, nx] = True
-                            queue.append((ny, nx))
-
-            ys, xs = np.nonzero(grown)
-            if not len(ys):
-                continue
-            gy0 = min_y + int(ys.min())
-            gy1 = min_y + int(ys.max()) + 1
-            bbox = (min_x, gy0, max_x + 1, gy1)
-            component_mask = grown[
-                ys.min() : ys.max() + 1,
-                xs.min() : xs.max() + 1,
-            ]
-            bbox, component_mask, texture, canopy_height = _attach_trunk(
-                image,
-                hue,
-                saturation,
-                value,
-                bbox,
-                component_mask,
+        ys, xs = np.nonzero(grown)
+        if not len(ys):
+            continue
+        gy0 = min_y + int(ys.min())
+        gy1 = min_y + int(ys.max()) + 1
+        bbox = (min_x, gy0, max_x + 1, gy1)
+        component_mask = grown[
+            ys.min() : ys.max() + 1,
+            xs.min() : xs.max() + 1,
+        ]
+        bbox, component_mask, texture, canopy_height = _attach_trunk(
+            image,
+            hue,
+            saturation,
+            value,
+            bbox,
+            component_mask,
+        )
+        components.append(
+            CanopyComponent(
+                mask=component_mask,
+                bbox=bbox,
+                area=int(component_mask.sum()),
+                texture=texture,
+                canopy_height=canopy_height,
             )
-            components.append(
-                CanopyComponent(
-                    mask=component_mask,
-                    bbox=bbox,
-                    area=int(component_mask.sum()),
-                    texture=texture,
-                    canopy_height=canopy_height,
-                )
-            )
+        )
     return components
 
 
@@ -499,46 +507,121 @@ def detect_alpha_objects(
     return components
 
 
-def _draw_canopy_lobe(
-    out: np.ndarray,
-    texture: np.ndarray,
-    canopy_h: int,
-    cx: float,
-    cy: float,
-    rx: float,
-    ry: float,
+def detect_procedural_objects(
+    image: np.ndarray,
     *,
-    mirror: bool = False,
-) -> None:
-    """Draw one oval of real canopy pixels into a side-view card."""
+    foreground: np.ndarray | None = None,
+    min_area: int = 40,
+    max_area_fraction: float = 0.45,
+) -> list[CanopyComponent]:
+    """Procedurally segment trees and elevated props for any custom ROM / tileset.
 
-    height, width = texture.shape[:2]
-    x0 = max(0, int(cx - rx))
-    x1 = min(out.shape[1], int(cx + rx) + 1)
-    y0 = max(0, int(cy - ry))
-    y1 = min(out.shape[0], int(cy + ry) + 1)
-    for y in range(y0, y1):
-        ny = (y + 0.5 - cy) / max(ry, 1.0)
-        for x in range(x0, x1):
-            nx = (x + 0.5 - cx) / max(rx, 1.0)
-            if nx * nx + ny * ny > 1.0:
+    Does not rely on fixed green HSV ranges.  Uses foreground metatile seeds
+    (BG1) when available and dominant-terrain contrast segmentation to find
+    objects and their attached bases.
+    """
+
+    if image.ndim != 3 or image.shape[2] < 3:
+        return []
+    h, w = image.shape[:2]
+    total_pixels = h * w
+
+    # Find dominant ground terrain color:
+    pix = image[..., :3].reshape(-1, 3)
+    qpix = (pix // 12) * 12
+    colors, counts = np.unique(qpix, axis=0, return_counts=True)
+    dominant_ground = colors[np.argmax(counts)]
+
+    dist = np.linalg.norm(
+        image[..., :3].astype(float) - dominant_ground.astype(float), axis=-1
+    )
+    is_candidate = dist > 26.0
+    if foreground is not None and foreground.shape[:2] == (h, w):
+        is_candidate |= foreground[..., 3] > 0
+
+    # 1 iteration morph to break thin bridges between adjacent trees:
+    opened = _morph(is_candidate, erode=True, iterations=1)
+    opened = _morph(opened, erode=False, iterations=1)
+    if not opened.any():
+        return []
+
+    labels = np.zeros((h, w), dtype=int)
+    label_id = 1
+    seed_queue: deque[tuple[int, int]] = deque()
+    for y in range(h):
+        for x in range(w):
+            if not opened[y, x] or labels[y, x] > 0:
                 continue
-            sx = int((nx * 0.5 + 0.5) * (width - 1))
-            if mirror:
-                sx = width - 1 - sx
-            sy = min(canopy_h - 1, max(0, int((ny * 0.5 + 0.5) * (canopy_h - 1))))
-            src = texture[sy, sx]
-            if src[3] > 0:
-                out[y, x] = src
+            q: deque[tuple[int, int]] = deque([(y, x)])
+            labels[y, x] = label_id
+            seed_queue.append((y, x))
+            while q:
+                cy, cx = q.popleft()
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    ny, nx = cy + dy, cx + dx
+                    if (
+                        0 <= ny < h
+                        and 0 <= nx < w
+                        and opened[ny, nx]
+                        and labels[ny, nx] == 0
+                    ):
+                        labels[ny, nx] = label_id
+                        q.append((ny, nx))
+                        seed_queue.append((ny, nx))
+            label_id += 1
+
+    # Grow back to full candidate mask so no outer leaves/edges are lost:
+    while seed_queue:
+        cy, cx = seed_queue.popleft()
+        cid = labels[cy, cx]
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            ny, nx = cy + dy, cx + dx
+            if (
+                0 <= ny < h
+                and 0 <= nx < w
+                and is_candidate[ny, nx]
+                and labels[ny, nx] == 0
+            ):
+                labels[ny, nx] = cid
+                seed_queue.append((ny, nx))
+
+    components: list[CanopyComponent] = []
+    for cid in range(1, label_id):
+        ys, xs = np.nonzero(labels == cid)
+        count = len(ys)
+        if count < min_area or count > max_area_fraction * total_pixels:
+            continue
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        cw = x1 - x0
+        ch = y1 - y0
+        if cw < 6 or ch < 6:
+            continue
+
+        comp_mask = labels[y0:y1, x0:x1] == cid
+        tex = np.zeros((ch, cw, 4), dtype=np.uint8)
+        tex[..., :3] = image[y0:y1, x0:x1, :3]
+        tex[..., 3] = (comp_mask * 255).astype(np.uint8)
+        canopy_h = max(4, int(ch * 0.85))
+
+        components.append(
+            CanopyComponent(
+                mask=comp_mask,
+                bbox=(x0, y0, x1, y1),
+                area=count,
+                texture=tex,
+                canopy_height=canopy_h,
+            )
+        )
+    return components
 
 
 def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
-    """Build a side-view tree procedurally from the game's own canopy pixels.
+    """Build a side-view tree card from the game's authentic sprite pixels.
 
-    There is no per-tree sprite table and no hand-placed trunk.  The component
-    bbox seeds a deterministic RNG; that RNG varies the crown proportions and
-    the number/placement of overlapping lobes.  Every opaque pixel still comes
-    from the source canopy/trunk art.
+    Preserves the authentic pixel art of the tree (canopy and trunk)
+    extracted from the ROM, with deterministic subtle framing variation
+    seeded by the component bbox.
     """
 
     if component.texture is None or component.canopy_height <= 0:
@@ -546,7 +629,6 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     texture = component.texture
     height, width = texture.shape[:2]
     canopy_h = min(component.canopy_height, height)
-    trunk = texture[canopy_h:height]
     if canopy_h < 4 or width < 4:
         return None
 
@@ -559,55 +641,13 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     ) & 0xFFFFFFFF
     rng = np.random.default_rng(seed)
 
-    # Keep the card inside the source footprint.  Oversizing the crown made
-    # adjacent cards overlap and left the cleared footprint visible.
-    out_w = max(10, min(96, int(round(width * rng.uniform(0.92, 1.02)))))
-    crown_h = max(14, min(128, int(round(canopy_h * rng.uniform(0.95, 1.10)))))
-    trunk_h = max(3, int(round(max(1, height - canopy_h) * rng.uniform(0.7, 1.0))))
-    out = np.zeros((crown_h + trunk_h, out_w, 4), dtype=np.uint8)
+    pad_top = int(rng.integers(0, 2))
+    pad_side = int(rng.integers(0, 2)) if width <= (x1 - x0) else 0
 
-    # Central mass plus 3-5 satellite lobes.  Jitter and mirroring are seeded
-    # by the bbox, so neighbouring trees do not share an identical silhouette.
-    lobes: list[tuple[float, float, float, float, bool]] = [
-        (0.50, 0.46, 0.32, 0.44, False)
-    ]
-    count = int(rng.integers(3, 6))
-    for index in range(count):
-        angle = 2.0 * np.pi * index / count + rng.uniform(-0.35, 0.35)
-        cx = 0.50 + 0.19 * np.cos(angle) + rng.uniform(-0.03, 0.03)
-        cy = 0.50 + 0.18 * np.sin(angle) + rng.uniform(-0.03, 0.03)
-        rx = 0.19 + rng.uniform(0.0, 0.08)
-        ry = 0.20 + rng.uniform(0.0, 0.08)
-        lobes.append((cx, cy, rx, ry, bool(rng.integers(0, 2))))
-
-    for cx, cy, rx, ry, mirror in lobes:
-        _draw_canopy_lobe(
-            out,
-            texture,
-            canopy_h,
-            out_w * cx,
-            crown_h * cy,
-            out_w * rx,
-            crown_h * ry,
-            mirror=mirror,
-        )
-
-    # Actual trunk pixels, cropped to their real horizontal extent and scaled.
-    if trunk_h > 0 and trunk.size:
-        trunk_pixels = trunk[..., 3] > 0
-        if trunk_pixels.any():
-            _, xs = np.nonzero(trunk_pixels)
-            trunk = trunk[:, xs.min() : xs.max() + 1]
-        tw = max(6, int(round(out_w * rng.uniform(0.22, 0.30))))
-        tx0 = (out_w - tw) // 2
-        for y in range(trunk_h):
-            sy = min(trunk.shape[0] - 1, int(y / trunk_h * trunk.shape[0]))
-            for x in range(tw):
-                sx = min(trunk.shape[1] - 1, int(x / tw * trunk.shape[1]))
-                src = trunk[sy, sx]
-                if src[3] > 0:
-                    out[crown_h + y, tx0 + x] = src
-
+    out_h = height + pad_top
+    out_w = width + pad_side * 2
+    out = np.zeros((out_h, out_w, 4), dtype=np.uint8)
+    out[pad_top : pad_top + height, pad_side : pad_side + width] = texture
     return out
 
 

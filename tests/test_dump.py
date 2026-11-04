@@ -164,3 +164,27 @@ def test_obj_sprite_preserves_top_down_orientation():
     texture = adapted.sprites[0].texture
     assert tuple(texture[0, 0]) == (255, 0, 0, 255)
     assert tuple(texture[-1, 0]) == (0, 0, 255, 255)
+
+
+def test_obj_sprite_tight_crop_removes_transparent_padding():
+    # OAM hardware entry allocates 32x32, but sprite only occupies 16x20 inside it.
+    h, w = 64, 64
+    obj = np.zeros((h, w, 4), dtype=np.uint8)
+    obj[12:32, 8:24] = (200, 100, 50, 255)  # 20 rows x 16 cols
+    oam = bytearray(0x400)
+    # OAM entry 0: x=0, y=0, square 32x32 (shape=0, size=2)
+    attr0 = 0 | (0 << 14)
+    attr1 = 0 | (2 << 14)
+    oam[0:2] = attr0.to_bytes(2, "little")
+    oam[2:4] = attr1.to_bytes(2, "little")
+    adapted = DumpWorld.from_dump(
+        _fake_dump({2: _layer(h, w, 1)}, obj=obj, oam=np.frombuffer(oam, dtype=np.uint8))
+    )
+    assert len(adapted.sprites) == 1
+    sprite = adapted.sprites[0]
+    assert sprite.texture.shape == (20, 16, 4)
+    scale = 512.0 / 64
+    assert sprite.x == (8 + 24) * 0.5 * scale
+    assert sprite.z == (12 + 32) * 0.5 * scale
+    assert sprite.width == 16 * scale
+    assert sprite.height == 20 * scale

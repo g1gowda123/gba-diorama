@@ -44,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force-3d", action="store_true", help="mesh even UI scenes instead of 2D fallback")
     parser.add_argument("--profile", type=Path, help="TOML scene profile (file or directory)")
     parser.add_argument("--no-post", action="store_true", help="skip bloom/tilt-shift/grade")
+    parser.add_argument(
+        "--flip-y",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Flip dumped layer rows vertically (for OpenGL FBO dumps)",
+    )
     args = parser.parse_args(argv)
 
     if args.width < 64 or args.height < 64:
@@ -59,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             all_layers=args.all_layers,
             force_3d=args.force_3d,
             profile_path=args.profile,
+            flip_y=args.flip_y,
         )
         source = f"dump={args.dump}"
     elif args.atlas:
@@ -88,17 +95,22 @@ def main(argv: list[str] | None = None) -> int:
     Image.fromarray(result.image).save(out)
 
     print(f"wrote {out}")
-    profile_name = result.profile.name if result.profile is not None else "generic"
-    signature = result.signature.label() if result.signature is not None else "unknown"
-    if result.fallback:
+    profile = getattr(result, "profile", None)
+    profile_name = profile.name if profile is not None else "generic"
+    sig = getattr(result, "signature", None)
+    signature = sig.label() if sig is not None else "unknown"
+    fallback = getattr(result, "fallback", False)
+    if fallback:
+        reason = getattr(result, "reason", "unknown")
         print(
             f"resolution={args.width}x{args.height} {source} fallback=2D "
-            f"({result.reason}) profile={profile_name}"
+            f"({reason}) profile={profile_name}"
         )
         print(f"signature={signature}")
     else:
         assert result.scene is not None
-        atlas_info = f" atlas_frames={result.atlas.frames}" if result.atlas else ""
+        atlas = getattr(result, "atlas", None)
+        atlas_info = f" atlas_frames={atlas.frames}" if atlas else ""
         print(
             f"resolution={args.width}x{args.height} {source} yaw={args.yaw:.1f} "
             f"triangles={len(result.scene.triangles)} profile={profile_name}"
@@ -106,9 +118,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"signature={signature}")
         print(f"layers={result.scene.layers}")
-        if result.atlas is not None and result.atlas.parallax:
+        if atlas is not None and atlas.parallax:
             estimates = []
-            for index, estimate in sorted(result.atlas.parallax.items()):
+            for index, estimate in sorted(atlas.parallax.items()):
                 factor = "?" if estimate.factor is None else f"{estimate.factor:.2f}"
                 estimates.append(f"BG{index}:{factor}({estimate.confidence:.2f})")
             print(f"parallax={', '.join(estimates)}")

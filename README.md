@@ -19,21 +19,18 @@ The first real result comes from an mGBA dump of Pokémon Emerald's Route 101:
 
 The dump loader picked BG2 as the ground from layer content (BG3 is a
 low-detail backdrop in this scene), composited the backdrop into transparent
-holes, cropped the player out of the OBJ layer, and rendered it as a billboard
-on a tilted plinth. It also detects foliage-colored canopy regions in BG2,
-separates touching trees with a morphological opening, and builds each tree
-into a side-view card from the game's own pixels: a seeded procedural RNG
-varies the crown proportions and overlapping lobes, and the actual trunk art is
-scaled at the base. Cards are capped to their source footprint and stood at the
-front edge of it, so adjacent trees do not overlap and the cleared ground sits
-behind the card instead of in front. Each tree is rendered as three depth
-slices: a darker, slightly wider card behind the main card gives the canopy
-thickness instead of a single flat cutout. The cleared footprint is darkened
-into undergrowth. No synthetic trunk, sprite atlas, or hand-placed tree is used.
-Sparse BG1 leaves use the same card treatment. `--all-layers` shows the
-unprofiled version. Both the BG and OBJ FBOs are top-down. The cards are a
-stylized 3D2D approximation: the source art is top-down, so the result reads as
-a procedural pop-up sprite rather than a hand-drawn side-view tree.
+holes, tightly cropped the player out of the OBJ layer to ground the sprite at its
+feet, and rendered it as an upright billboard on a tilted plinth. It also detects
+world props and trees across layers: multi-layer metatiles (e.g. BG1 elevated
+treetops + BG2 trunks/bases) are unified before segmentation, and watershed
+component expansion preserves the authentic handcrafted pixel art without
+mangling or distorting the silhouette. A procedural detector can also segment
+arbitrary custom ROM hack tilesets (such as autumn, snowy, or alien palettes)
+by discovering dominant ground terrain without hardcoded color constraints.
+Each tree is rendered as an upright card capped to its footprint and rendered
+with three depth slices (a darker, slightly wider card behind the main card for
+canopy thickness), while the cleared ground underneath is smoothly inpainted.
+No synthetic trunk, sprite atlas, or hand-placed tree is used.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:

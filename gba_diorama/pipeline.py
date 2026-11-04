@@ -198,15 +198,20 @@ def render_dump(
     force_3d: bool = False,
     profile: SceneProfile | None = None,
     profile_path: str | Path | None = None,
+    flip_y: bool | None = None,
 ) -> DumpResult:
     """Render a real mGBA dump through the same mesher as the synthetic demo."""
 
-    dump = load_dump(root)
+    dump = load_dump(root, flip_y=flip_y)
     signature = SceneSignature.from_meta(dump.meta)
     if profile is None and profile_path is not None:
         profile = ProfileBook.from_path(profile_path).match(
             signature, dump.game_code
         )
+
+    if flip_y is None and profile is not None and profile.flip_y is not None:
+        if profile.flip_y != bool(dump.meta.get("flip_y", False)):
+            dump = load_dump(root, flip_y=profile.flip_y)
 
     reason = None if force_3d else _ui_fallback_reason(dump)
     if reason:

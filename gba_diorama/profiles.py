@@ -186,6 +186,7 @@ class SceneProfile:
     match: ProfileMatch = field(default_factory=ProfileMatch)
     game_code: str | None = None
     camera: CameraProfile = field(default_factory=CameraProfile)
+    flip_y: bool | None = None
 
     def matches(self, signature: SceneSignature, game_code: str = "") -> bool:
         if self.game_code and self.game_code not in {"*", ""}:
@@ -327,12 +328,15 @@ def _profile_from_dict(
         yaw_deg=_optional_float(camera_data.get("yaw_deg")),
         distance=_optional_float(camera_data.get("distance")),
     )
+    raw_flip_y = data.get("flip_y")
+    flip_y = bool(raw_flip_y) if raw_flip_y is not None else None
     return SceneProfile(
         name=name,
         layers=layers,
         match=match,
         game_code=str(data["game_code"]) if data.get("game_code") else None,
         camera=camera,
+        flip_y=flip_y,
     )
 
 

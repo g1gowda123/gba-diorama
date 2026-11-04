@@ -5,6 +5,7 @@ from gba_diorama.relief import (
     CanopyComponent,
     build_canopy_field,
     detect_canopies,
+    detect_procedural_objects,
     make_side_view_card,
 )
 
@@ -128,3 +129,64 @@ def test_side_view_card_keeps_a_multi_tile_tree_as_one_component():
     assert card.shape[1] <= (component.bbox[2] - component.bbox[0]) + 2
     assert card.shape[1] >= 44
     assert card.shape[0] > 48
+
+
+def test_detect_procedural_objects_autumn_tileset():
+    # Autumn romhack tileset: warm orange/gold ground and vibrant crimson/red trees
+    # with brown trunks. Green HSV detector will find 0 objects, but procedural detector
+    # must discover the trees.
+    image = np.zeros((128, 128, 4), dtype=np.uint8)
+    image[..., :3] = (210, 165, 95)  # Dominant autumn grass
+    image[..., 3] = 255
+
+    # Red/crimson tree canopy 1
+    image[16:48, 16:48, :3] = (190, 45, 30)
+    # Trunk
+    image[48:56, 28:36, :3] = (80, 40, 25)
+
+    # Red/crimson tree canopy 2
+    image[16:48, 70:102, :3] = (190, 45, 30)
+    # Trunk
+    image[48:56, 82:90, :3] = (80, 40, 25)
+
+    # Green detector fails on non-green tileset:
+    green_comps = detect_canopies(image)
+    assert len(green_comps) == 0
+
+    # Procedural detector successfully discovers both trees:
+    proc_comps = detect_procedural_objects(image, min_area=32)
+    assert len(proc_comps) == 2
+    for comp in proc_comps:
+        assert comp.area >= 32
+        assert comp.texture is not None
+        assert comp.bbox[3] - comp.bbox[1] >= 32
+        card = make_side_view_card(comp)
+        assert card is not None
+        assert card[..., 3].any()
+
+
+def test_detect_procedural_objects_with_foreground_seeds():
+    # Multi-layer scene: BG2 ground has lower canopy and trunk; BG1 has upper treetop
+    h, w = 64, 64
+    ground = np.zeros((h, w, 4), dtype=np.uint8)
+    ground[..., :3] = (120, 180, 120)  # grass
+    ground[..., 3] = 255
+    # Lower canopy and trunk on ground
+    ground[20:40, 16:48, :3] = (30, 110, 40)
+    ground[40:48, 28:36, :3] = (75, 45, 25)
+
+    # Upper treetop on foreground layer (BG1)
+    foreground = np.zeros((h, w, 4), dtype=np.uint8)
+    foreground[8:20, 16:48, :3] = (30, 110, 40)
+    foreground[8:20, 16:48, 3] = 255
+
+    combined = ground.copy()
+    fg_mask = foreground[..., 3] > 0
+    combined[fg_mask] = foreground[fg_mask]
+
+    comps = detect_procedural_objects(combined, foreground=foreground, min_area=32)
+    assert len(comps) == 1
+    comp = comps[0]
+    # The unified object includes the treetop from y=8 down through trunk at y=48
+    assert comp.bbox[1] <= 10
+    assert comp.bbox[3] >= 46
