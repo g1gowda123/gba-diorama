@@ -12,7 +12,8 @@ components are generic, and a profile can replace the detector later.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import math
 
 import numpy as np
 
@@ -23,6 +24,7 @@ class CanopyComponent:
     bbox: tuple[int, int, int, int]
     area: int
     texture: np.ndarray | None = None
+    canopy_height: int = 0
 
 
 @dataclass
@@ -33,6 +35,9 @@ class CanopyField:
     texture: np.ndarray
     ground: np.ndarray
     components: list[CanopyComponent]
+    cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = field(
+        default_factory=list
+    )
 
 
 def _rgb_to_hsv(image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -119,21 +124,20 @@ def _inpaint_ring(
         x0, y0, x1, y1 = component.bbox
         local = np.zeros(mask.shape, dtype=bool)
         local[y0:y1, x0:x1] = component.mask
-        fill = _morph(local, erode=False, iterations=4)
-        ring = _morph(fill, erode=False, iterations=14) & ~_morph(
+        fill = _morph(local, erode=False, iterations=2)
+        ring = _morph(fill, erode=False, iterations=10) & ~_morph(
             fill, erode=False, iterations=2
         )
         ring &= ~mask
         pixels = image[ring, :3]
         if not len(pixels):
             continue
-        # Prefer the brighter half of the ring: the near boundary is the
-        # tree's own shadow, while the outer ring reaches sunlit grass.
-        lum = pixels.mean(axis=1)
-        pixels = pixels[lum >= np.percentile(lum, 55)]
         rng = np.random.default_rng((x0 * 73856093) ^ (y0 * 19349663))
         picks = rng.integers(0, len(pixels), size=int(fill.sum()))
-        out[fill, :3] = pixels[picks]
+        # Blend the local median with ring samples: a pure random fill turns
+        # into bright confetti, while a pure median becomes a flat teal block.
+        base = np.median(pixels, axis=0)
+        out[fill, :3] = (0.55 * base + 0.45 * pixels[picks]).astype(np.uint8)
         out[fill, 3] = 255
     return out
 
@@ -166,7 +170,9 @@ def _attach_trunk(
     value: np.ndarray,
     bbox: tuple[int, int, int, int],
     mask: np.ndarray,
-) -> tuple[tuple[int, int, int, int], np.ndarray, np.ndarray | None]:
+) -> tuple[
+    tuple[int, int, int, int], np.ndarray, np.ndarray | None, int
+]:
     """Extend a canopy cutout through a compact non-green trunk below it.
 
     The GBA tree tile often has a small brown trunk a few pixels below the
@@ -176,13 +182,33 @@ def _attach_trunk(
 
     x0, y0, x1, y1 = bbox
     height, width = image.shape[:2]
+
+    # Some trees (especially multi-tile ones) have no grass gap: the dark-pixel
+    # growth already swallowed the trunk.  Split the existing bbox instead of
+    # searching below it, otherwise the component loses its texture.
+    local_brown = (
+        (hue[y0:y1, x0:x1] < 70.0)
+        & (saturation[y0:y1, x0:x1] > 0.08)
+        & (value[y0:y1, x0:x1] < 0.62)
+    )
+    brown_rows = local_brown.any(axis=1)
+    if len(brown_rows) and brown_rows[-1]:
+        canopy_h = len(brown_rows) - 1
+        while canopy_h > 0 and brown_rows[canopy_h - 1]:
+            canopy_h -= 1
+        if canopy_h >= 4:
+            texture = np.zeros((y1 - y0, x1 - x0, 4), dtype=np.uint8)
+            texture[..., :3] = image[y0:y1, x0:x1, :3]
+            texture[..., 3] = (mask * 255).astype(np.uint8)
+            return bbox, mask, texture, canopy_h
+
     search_y1 = min(height, y1 + max(12, (y1 - y0)))
     cx = (x0 + x1) // 2
     half = max(3, (x1 - x0) // 3)
     rx0 = max(0, cx - half)
     rx1 = min(width, cx + half + 1)
     if search_y1 <= y1 or rx1 <= rx0:
-        return bbox, mask, None
+        return bbox, mask, None, 0
 
     region = (slice(y1, search_y1), slice(rx0, rx1))
     # Brown/grey trunk: low hue, low-ish value, not the bright green canopy.
@@ -192,7 +218,7 @@ def _attach_trunk(
         & (value[region] < 0.62)
     )
     if not trunk.any():
-        return bbox, mask, None
+        return bbox, mask, None, 0
 
     seen = np.zeros_like(trunk, dtype=bool)
     best: tuple[int, int, int, int] | None = None
@@ -232,7 +258,7 @@ def _attach_trunk(
                 best = (rx0 + min_x, y1 + min_y, rx0 + max_x + 1, y1 + max_y + 1)
 
     if best is None:
-        return bbox, mask, None
+        return bbox, mask, None, 0
 
     tx0, ty0, tx1, ty1 = best
     trunk_h = ty1 - ty0
@@ -254,7 +280,7 @@ def _attach_trunk(
         ty0:ty1, tx0:tx1, :3
     ]
     texture[..., 3] = (new_mask * 255).astype(np.uint8)
-    return (x0, y0, x1, y0 + new_h), new_mask, texture
+    return (x0, y0, x1, y0 + new_h), new_mask, texture, canopy_h
 
 
 def detect_canopies(
@@ -364,7 +390,7 @@ def detect_canopies(
                 ys.min() : ys.max() + 1,
                 xs.min() : xs.max() + 1,
             ]
-            bbox, component_mask, texture = _attach_trunk(
+            bbox, component_mask, texture, canopy_height = _attach_trunk(
                 image,
                 hue,
                 saturation,
@@ -378,6 +404,7 @@ def detect_canopies(
                     bbox=bbox,
                     area=int(component_mask.sum()),
                     texture=texture,
+                    canopy_height=canopy_height,
                 )
             )
     return components
@@ -456,6 +483,116 @@ def detect_alpha_objects(
     return components
 
 
+def _draw_canopy_lobe(
+    out: np.ndarray,
+    texture: np.ndarray,
+    canopy_h: int,
+    cx: float,
+    cy: float,
+    rx: float,
+    ry: float,
+    *,
+    mirror: bool = False,
+) -> None:
+    """Draw one oval of real canopy pixels into a side-view card."""
+
+    height, width = texture.shape[:2]
+    x0 = max(0, int(cx - rx))
+    x1 = min(out.shape[1], int(cx + rx) + 1)
+    y0 = max(0, int(cy - ry))
+    y1 = min(out.shape[0], int(cy + ry) + 1)
+    for y in range(y0, y1):
+        ny = (y + 0.5 - cy) / max(ry, 1.0)
+        for x in range(x0, x1):
+            nx = (x + 0.5 - cx) / max(rx, 1.0)
+            if nx * nx + ny * ny > 1.0:
+                continue
+            sx = int((nx * 0.5 + 0.5) * (width - 1))
+            if mirror:
+                sx = width - 1 - sx
+            sy = min(canopy_h - 1, max(0, int((ny * 0.5 + 0.5) * (canopy_h - 1))))
+            src = texture[sy, sx]
+            if src[3] > 0:
+                out[y, x] = src
+
+
+def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
+    """Build a side-view tree procedurally from the game's own canopy pixels.
+
+    There is no per-tree sprite table and no hand-placed trunk.  The component
+    bbox seeds a deterministic RNG; that RNG varies the crown proportions and
+    the number/placement of overlapping lobes.  Every opaque pixel still comes
+    from the source canopy/trunk art.
+    """
+
+    if component.texture is None or component.canopy_height <= 0:
+        return None
+    texture = component.texture
+    height, width = texture.shape[:2]
+    canopy_h = min(component.canopy_height, height)
+    trunk = texture[canopy_h:height]
+    if canopy_h < 4 or width < 4:
+        return None
+
+    x0, y0, x1, y1 = component.bbox
+    seed = (
+        (x0 * 73856093)
+        ^ (y0 * 19349663)
+        ^ (x1 * 83492791)
+        ^ (y1 * 2654435761)
+    ) & 0xFFFFFFFF
+    rng = np.random.default_rng(seed)
+
+    out_w = max(10, min(96, int(round(width * rng.uniform(1.45, 1.75)))))
+    crown_h = max(14, min(128, int(round(canopy_h * rng.uniform(1.55, 1.85)))))
+    trunk_h = max(3, int(round(max(1, height - canopy_h) * rng.uniform(0.7, 1.0))))
+    out = np.zeros((crown_h + trunk_h, out_w, 4), dtype=np.uint8)
+
+    # Central mass plus 3-5 satellite lobes.  Jitter and mirroring are seeded
+    # by the bbox, so neighbouring trees do not share an identical silhouette.
+    lobes: list[tuple[float, float, float, float, bool]] = [
+        (0.50, 0.46, 0.32, 0.44, False)
+    ]
+    count = int(rng.integers(3, 6))
+    for index in range(count):
+        angle = 2.0 * np.pi * index / count + rng.uniform(-0.35, 0.35)
+        cx = 0.50 + 0.19 * np.cos(angle) + rng.uniform(-0.03, 0.03)
+        cy = 0.50 + 0.18 * np.sin(angle) + rng.uniform(-0.03, 0.03)
+        rx = 0.19 + rng.uniform(0.0, 0.08)
+        ry = 0.20 + rng.uniform(0.0, 0.08)
+        lobes.append((cx, cy, rx, ry, bool(rng.integers(0, 2))))
+
+    for cx, cy, rx, ry, mirror in lobes:
+        _draw_canopy_lobe(
+            out,
+            texture,
+            canopy_h,
+            out_w * cx,
+            crown_h * cy,
+            out_w * rx,
+            crown_h * ry,
+            mirror=mirror,
+        )
+
+    # Actual trunk pixels, cropped to their real horizontal extent and scaled.
+    if trunk_h > 0 and trunk.size:
+        trunk_pixels = trunk[..., 3] > 0
+        if trunk_pixels.any():
+            _, xs = np.nonzero(trunk_pixels)
+            trunk = trunk[:, xs.min() : xs.max() + 1]
+        tw = max(6, int(round(out_w * rng.uniform(0.22, 0.30))))
+        tx0 = (out_w - tw) // 2
+        for y in range(trunk_h):
+            sy = min(trunk.shape[0] - 1, int(y / trunk_h * trunk.shape[0]))
+            for x in range(tw):
+                sx = min(trunk.shape[1] - 1, int(x / tw * trunk.shape[1]))
+                src = trunk[sy, sx]
+                if src[3] > 0:
+                    out[crown_h + y, tx0 + x] = src
+
+    return out
+
+
 def build_canopy_field(
     image: np.ndarray,
     components: list[CanopyComponent],
@@ -508,6 +645,12 @@ def build_canopy_field(
     heights = min_height + (max_height - min_height) * (neighbours / 8.0)
     heights = np.where(present, heights, 0.0).astype(np.float32)
 
+    cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = []
+    for component in components:
+        card = make_side_view_card(component)
+        if card is not None:
+            cards.append((card, component.bbox))
+
     return CanopyField(
         mask=mask,
         present=present,
@@ -515,4 +658,5 @@ def build_canopy_field(
         texture=texture,
         ground=ground,
         components=components,
+        cards=cards,
     )

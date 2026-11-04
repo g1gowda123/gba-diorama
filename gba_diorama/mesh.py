@@ -610,9 +610,57 @@ def _add_cards(
             )
 
 
+def _add_prebuilt_cards(
+    out: list[Triangle],
+    world: SyntheticWorld,
+    camera: Camera,
+    cards: list[tuple[np.ndarray, tuple[int, int, int, int]]],
+    *,
+    name: str = "canopy-card",
+) -> None:
+    """Render pre-warped side-view cards at their source-world positions."""
+
+    if not cards:
+        return
+    ground = world.layers[getattr(world, "ground_layer", 3)]
+    img_h, img_w = ground.shape[:2]
+    scale = WORLD_PX / max(img_w, img_h)
+    for index, (image, (x0, y0, x1, y1)) in enumerate(cards):
+        height, width = image.shape[:2]
+        if width < 4 or height < 4:
+            continue
+        card_width = width * scale
+        card_height = height * scale
+        cx = (x0 + x1) * 0.5 * scale
+        cz = (y0 + y1) * 0.5 * scale
+        base = np.array([cx, world.ground_height(cx, cz), cz], dtype=np.float32)
+        # A small forward lean keeps the card from looking pasted onto the map.
+        base = base + camera.forward * (card_height * 0.03)
+        top = base + camera.up * card_height
+        half = camera.right * (card_width * 0.5)
+        _quad(
+            out,
+            base - half,
+            base + half,
+            top + half,
+            top - half,
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            Texture(image, name=f"{name}-{index}"),
+            alpha_test=True,
+            name=name,
+        )
+
+
 def _add_canopy_cards(
     out: list[Triangle], world: SyntheticWorld, camera: Camera
 ) -> None:
+    cards = getattr(world, "canopy_cards", None)
+    if cards:
+        _add_prebuilt_cards(out, world, camera, cards)
+        return
     shadows = getattr(world, "canopy_shadows", None)
     texture = getattr(world, "canopy_texture", None)
     if shadows and texture is not None:

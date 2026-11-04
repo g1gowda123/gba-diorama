@@ -21,13 +21,14 @@ The dump loader picked BG2 as the ground from layer content (BG3 is a
 low-detail backdrop in this scene), composited the backdrop into transparent
 holes, cropped the player out of the OBJ layer, and rendered it as a billboard
 on a tilted plinth. It also detects saturated-green canopy regions in BG2,
-separates touching trees with a morphological opening, cuts each component into
-an organic card, composes the canopy with its actual trunk pixels (no synthetic
-trunk), and adds a contact shadow. Sparse BG1 leaves use the same card
-treatment. `--all-layers` shows the
+separates touching trees with a morphological opening, and builds each tree
+into a side-view card from the game's own pixels: a seeded procedural RNG
+varies the crown proportions and overlapping lobes, and the actual trunk art is
+scaled at the base. No synthetic trunk, sprite atlas, or hand-placed tree is
+used. Sparse BG1 leaves use the same card treatment. `--all-layers` shows the
 unprofiled version. Both the BG and OBJ FBOs are top-down. The cards are a
 stylized 3D2D approximation: the source art is top-down, so the result reads as
-a pop-up sprite card rather than a hand-drawn side-view tree.
+a procedural pop-up sprite rather than a hand-drawn side-view tree.
 
 The layers are decoded independently before meshing, which is the part that
 makes a 3D2D composite possible:
@@ -200,8 +201,9 @@ sparse-overlay skip.
 - Real mGBA dump rendering: content-based ground selection, non-square world
   extents, and OBJ-layer sprites cropped from OAM entries.
 - Canopy cards from BG2/BG1: saturated-green component detection, morphological
-  splitting of touching trees, organic cutouts, canopy + actual-trunk
-  composition, ground fill-under, and contact shadows.
+  splitting of touching trees, procedural multi-lobe side-view generation from
+  actual canopy pixels, actual-trunk scaling, ground fill-under, and contact
+  shadows.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
 - Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size
@@ -209,7 +211,7 @@ sparse-overlay skip.
   distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 41 tests.
+- Deterministic CLI and 43 tests.
 
 ## What is not done yet
 
@@ -219,10 +221,11 @@ sparse-overlay skip.
 - Real sprites are cropped from the composited OBJ layer; OAM/OBJ tile decoding
   is still a primitive, not a full per-sprite renderer.
 - Canopy cards are a green-color heuristic, not semantic understanding: they do
-  not yet separate trees from green buildings. Because the GBA tree art is
-  top-down, the cards read as stylized pop-up sprites rather than true
-  side-view trees; hand-authored side-view assets or a stronger procedural
-  foliage pass are the next visual step.
+  not yet separate trees from green buildings. The side-view generator is
+  deliberately procedural (seeded by each component bbox) and keeps the GBA
+  palette, but the source art is top-down; the result reads as stylized pop-up
+  sprites, not hand-painted Octopath foliage. Dense multi-tile forests still
+  need better component splitting and depth-card volume.
 - Sparse foreground layers are still skipped by default until height inference
   can tell tree canopies from buildings.
 - Profiles are opt-in (`--profile`); there is no automatic profile discovery or

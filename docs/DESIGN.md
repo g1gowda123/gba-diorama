@@ -154,8 +154,12 @@ into the ground layer rather than living on a separate BG:
 - Build a cutout texture from the component pixels and fill the corresponding
   ground pixels from a bright ring of surrounding grass, so the tree is not
   drawn twice and the fill does not leave a flat teal rectangle.
-- Stand each component up as a single camera-facing card with organic lobed
-  alpha. No synthetic trunk or repeated foliage cluster.
+- Stand each component up as a camera-facing side-view card. A deterministic
+  RNG seeded by the component bbox varies the crown proportions and the number,
+  placement, scale, and mirroring of a central mass plus 3-5 satellite lobes. All opaque pixels
+  still come from the source canopy/trunk art; there is no sprite atlas or
+  hand-placed tree. Multi-tile trees are handled as one connected component
+  because detection runs on the full BG image, not per 8×8 tile.
 - Use the component boxes for contact shadows; BG1 billboard layers use the
   same card path.
 

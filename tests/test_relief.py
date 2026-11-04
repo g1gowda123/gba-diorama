@@ -1,7 +1,12 @@
 import numpy as np
 
 from gba_diorama.mesh import _organic_cutout
-from gba_diorama.relief import build_canopy_field, detect_canopies
+from gba_diorama.relief import (
+    CanopyComponent,
+    build_canopy_field,
+    detect_canopies,
+    make_side_view_card,
+)
 
 
 def _scene() -> np.ndarray:
@@ -60,3 +65,60 @@ def test_canopy_card_composes_actual_trunk_without_grass_gap():
     assert component.bbox[3] < 36
     assert tuple(component.texture[-1, 7, :3]) == (90, 60, 40)
     assert component.texture[-1, 7, 3] == 255
+
+
+def test_side_view_card_is_procedural_deterministic_and_uses_source_pixels():
+    texture = np.zeros((20, 14, 4), dtype=np.uint8)
+    texture[:14, :, :3] = (40, 120, 40)
+    texture[:14, :, 3] = 255
+    texture[14:20, 6:8, :3] = (90, 60, 40)
+    texture[14:20, 6:8, 3] = 255
+    mask = np.zeros((20, 14), dtype=bool)
+    mask[:14] = True
+    mask[14:20, 6:8] = True
+    component = CanopyComponent(
+        mask=mask,
+        bbox=(8, 8, 22, 28),
+        area=int(mask.sum()),
+        texture=texture,
+        canopy_height=14,
+    )
+
+    card = make_side_view_card(component)
+    assert card is not None
+    assert card.shape[0] > card.shape[1]
+    assert card.shape[0] > 14
+    assert card[..., 3].any()
+    # The card is generated from the source palette, not a hardcoded sprite.
+    assert (card[..., 1] > card[..., 0]).any()
+    # Same bbox -> same card, so romhack/regeneration runs are reproducible.
+    assert np.array_equal(card, make_side_view_card(component))
+
+    other = CanopyComponent(
+        mask=mask,
+        bbox=(40, 40, 54, 60),
+        area=int(mask.sum()),
+        texture=texture,
+        canopy_height=14,
+    )
+    assert not np.array_equal(card, make_side_view_card(other))
+
+
+def test_side_view_card_keeps_a_multi_tile_tree_as_one_component():
+    # Emerald trees are often 2x2 or 3x3 8px tiles.  Detection must operate on
+    # the whole BG image, not one tile at a time.
+    image = np.zeros((128, 128, 4), dtype=np.uint8)
+    image[..., :3] = (112, 192, 160)
+    image[..., 3] = 255
+    image[16:64, 16:64, :3] = (40, 120, 40)  # 48x48 = 6x6 tiles
+    image[64:72, 34:46, :3] = (90, 60, 40)
+
+    components = detect_canopies(image)
+    assert len(components) == 1
+    component = components[0]
+    assert component.bbox[2] - component.bbox[0] >= 48
+    assert component.bbox[3] - component.bbox[1] >= 48
+    card = make_side_view_card(component)
+    assert card is not None
+    assert card.shape[1] > 48
+    assert card.shape[0] > 48

@@ -359,6 +359,9 @@ class DumpWorld:
     canopy_height: np.ndarray | None = None
     canopy_texture: np.ndarray | None = None
     canopy_shadows: list[tuple[int, int, int, int]] = field(default_factory=list)
+    canopy_cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = field(
+        default_factory=list
+    )
     billboard_layers: dict[
         int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
     ] = field(default_factory=dict)
@@ -413,6 +416,7 @@ class DumpWorld:
         canopy_height = None
         canopy_texture = None
         canopy_shadows: list[tuple[int, int, int, int]] = []
+        canopy_cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = []
         billboard_layers: dict[
             int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
         ] = {}
@@ -432,6 +436,7 @@ class DumpWorld:
                     canopy_height = canopy.heights
                     canopy_texture = canopy.texture
                     canopy_shadows = [component.bbox for component in canopy.components]
+                    canopy_cards = list(canopy.cards)
                     ground = canopy.ground
         if h % 8 or w % 8:
             raise ValueError(f"BG{ground_index} size {w}x{h} is not tile-aligned")
@@ -538,6 +543,7 @@ class DumpWorld:
             canopy_height=canopy_height,
             canopy_texture=canopy_texture,
             canopy_shadows=canopy_shadows,
+            canopy_cards=canopy_cards,
             billboard_layers=billboard_layers,
         )
 

@@ -66,11 +66,12 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `synthetic.py`: 64×64 synthetic overworld, real GBA VRAM/tilemaps, decoded
   layers 1/2/3, heights/materials/sprites.
 - `relief.py`: heuristic canopy segmentation (HSV green mask, morphological
-  opening, connected components), actual trunk composition, cutout texture,
-  ground ring-fill, and component boxes for shadows.
+  opening, connected components), actual trunk composition, seeded procedural
+  multi-lobe side-view generation, cutout texture, ground ring-fill, and
+  component boxes for shadows.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
-  organic canopy cards composed with actual trunk pixels, sprite billboards +
-  shadows; non-square maps keep square pixels.
+  procedural side-view canopy cards generated from actual canopy/trunk pixels,
+  sprite billboards + shadows; non-square maps keep square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
@@ -86,7 +87,7 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
   signature (BG2 ground with automatic canopy cards, BG3 backdrop ignored,
   BG1 billboard leaves; camera 16°/320/8°).
-- `tests/`: 41 tests covering decode, dump round-trip, profiles, atlas
+- `tests/`: 43 tests covering decode, dump round-trip, profiles, atlas
   stitching/coverage, parallax, canopy relief/cards, ground compositing, mesh,
   render, post, fallback, determinism.
 
