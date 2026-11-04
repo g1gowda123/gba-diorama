@@ -24,10 +24,10 @@ index 71ab7bb..a360e4f 100644
  	renderers/software-mode0.c
 diff --git a/src/gba/renderers/diorama-dump.c b/src/gba/renderers/diorama-dump.c
 new file mode 100644
-index 0000000..b5f3a2d
+index 0000000..4ffa2be
 --- /dev/null
 +++ b/src/gba/renderers/diorama-dump.c
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,314 @@
 +/* Copyright (c) 2024 gba-diorama contributors
 + *
 + * This Source Code Form is subject to the terms of the Mozilla Public
@@ -43,14 +43,24 @@ index 0000000..b5f3a2d
 +#include <stdio.h>
 +#include <stdlib.h>
 +#include <string.h>
++#include <sys/stat.h>
++
++#ifdef _WIN32
++#include <direct.h>
++#endif
 +
 +#define DIORAMA_DUMP_DEFAULT_FRAME 120
++#define DIORAMA_DEFAULT_SEQ_STEP 30
 +#define DIORAMA_PATH_MAX 1024
++
++static bool _joinPath(char* out, size_t size, const char* dir, const char* name) {
++	int len = snprintf(out, size, "%s/%s", dir, name);
++	return len > 0 && (size_t) len < size;
++}
 +
 +static bool _writeFile(const char* dir, const char* name, const void* data, size_t size) {
 +	char path[DIORAMA_PATH_MAX];
-+	int len = snprintf(path, sizeof(path), "%s/%s", dir, name);
-+	if (len < 0 || (size_t) len >= sizeof(path)) {
++	if (!_joinPath(path, sizeof(path), dir, name)) {
 +		fprintf(stderr, "gba-diorama: dump path too long: %s/%s\n", dir, name);
 +		return false;
 +	}
@@ -66,6 +76,40 @@ index 0000000..b5f3a2d
 +		return false;
 +	}
 +	return true;
++}
++
++static bool _dirExists(const char* path) {
++	struct stat st;
++	return stat(path, &st) == 0 && (st.st_mode & S_IFDIR);
++}
++
++static bool _ensureDir(const char* path) {
++	if (_dirExists(path)) {
++		return true;
++	}
++#ifdef _WIN32
++	int rc = _mkdir(path);
++#else
++	int rc = mkdir(path, 0777);
++#endif
++	if (rc == 0 || _dirExists(path)) {
++		return true;
++	}
++	fprintf(stderr, "gba-diorama: could not create directory %s\n", path);
++	return false;
++}
++
++static unsigned _envUint(const char* name, unsigned fallback) {
++	const char* value = getenv(name);
++	if (!value || !*value) {
++		return fallback;
++	}
++	char* end = NULL;
++	unsigned long parsed = strtoul(value, &end, 0);
++	if (!end || *end != '\0') {
++		return fallback;
++	}
++	return (unsigned) parsed;
 +}
 +
 +static bool _readLayer(GLuint fbo, int width, int height, bool flipY, uint8_t* out) {
@@ -120,59 +164,21 @@ index 0000000..b5f3a2d
 +	return ok;
 +}
 +
-+void GBADioramaDumpFrame(struct GBAVideoGLRenderer* renderer) {
-+	static unsigned frame;
-+	static bool done;
-+
-+	const char* dir = getenv("GBA_DIORAMA_DUMP_DIR");
-+	if (!dir || !*dir) {
-+		++frame;
-+		return;
-+	}
-+
-+	unsigned target = DIORAMA_DUMP_DEFAULT_FRAME;
-+	const char* frameEnv = getenv("GBA_DIORAMA_DUMP_FRAME");
-+	if (frameEnv && *frameEnv) {
-+		char* end = NULL;
-+		unsigned long value = strtoul(frameEnv, &end, 0);
-+		if (end && *end == '\0') {
-+			target = (unsigned) value;
-+		}
-+	}
-+
-+	/* Touch $GBA_DIORAMA_DUMP_DIR/trigger to capture the current frame
-+	 * without restarting the emulator.  This is how menu/battle states are
-+	 * captured after the initial frame target has already passed. */
-+	char triggerPath[DIORAMA_PATH_MAX];
-+	int triggerLen = snprintf(triggerPath, sizeof(triggerPath), "%s/trigger", dir);
-+	bool triggered = false;
-+	if (triggerLen > 0 && (size_t) triggerLen < sizeof(triggerPath)) {
-+		struct VFile* trigger = VFileOpen(triggerPath, O_RDONLY);
-+		if (trigger) {
-+			trigger->close(trigger);
-+			triggered = true;
-+			remove(triggerPath);
-+		}
-+	}
-+
-+	if (done && !triggered) {
-+		return;
-+	}
-+	if (!triggered && frame++ != target) {
-+		return;
-+	}
-+	if (renderer->scale <= 0) {
-+		fprintf(stderr, "gba-diorama: renderer scale is %d; launch with -C videoScale=2\n", renderer->scale);
-+		return;
-+	}
-+	if (!triggered) {
-+		done = true;
-+	}
-+
++/* Write one complete dump (metadata + VRAM/palette/OAM + BG/OBJ layers).
++ * `sequenceIndex` is < `sequenceCount` for sequence captures; pass a count of
++ * 0 for a one-off dump. */
++static void _dumpFrame(struct GBAVideoGLRenderer* renderer, const char* dir, unsigned frameIndex, unsigned sequenceIndex, unsigned sequenceCount, unsigned sequenceStep) {
 +	int width = GBA_VIDEO_HORIZONTAL_PIXELS * renderer->scale;
 +	int height = GBA_VIDEO_VERTICAL_PIXELS * renderer->scale;
 +	int mode = GBARegisterDISPCNTGetMode(renderer->dispcnt);
 +	int i;
++
++	char sequenceJson[160] = "";
++	if (sequenceCount > 0) {
++		snprintf(sequenceJson, sizeof(sequenceJson),
++			"  \"sequence\": {\"index\": %u, \"count\": %u, \"step\": %u},\n",
++			sequenceIndex, sequenceCount, sequenceStep);
++	}
 +
 +	char json[8192];
 +	int offset = snprintf(json, sizeof(json),
@@ -184,15 +190,17 @@ index 0000000..b5f3a2d
 +		"  \"screen\": [%d, %d],\n"
 +		"  \"layer_size\": [%d, %d],\n"
 +		"  \"flip_y\": false,\n"
++		"%s"
 +		"  \"dispcnt\": %u,\n"
 +		"  \"mode\": %d,\n"
 +		"  \"blda\": %u,\n"
 +		"  \"bldb\": %u,\n"
 +		"  \"bldy\": %u,\n"
 +		"  \"bg\": [\n",
-+		frame - 1, renderer->scale,
++		frameIndex, renderer->scale,
 +		GBA_VIDEO_HORIZONTAL_PIXELS, GBA_VIDEO_VERTICAL_PIXELS,
 +		width, height,
++		sequenceJson,
 +		(unsigned) renderer->dispcnt, mode,
 +		(unsigned) renderer->blda, (unsigned) renderer->bldb, (unsigned) renderer->bldy);
 +	if (offset < 0 || (size_t) offset >= sizeof(json)) {
@@ -249,7 +257,88 @@ index 0000000..b5f3a2d
 +	}
 +
 +	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-+	fprintf(stderr, "gba-diorama: dumped frame %u to %s (%dx%d)\n", frame - 1, dir, width, height);
++	fprintf(stderr, "gba-diorama: dumped frame %u to %s (%dx%d)\n", frameIndex, dir, width, height);
++}
++
++void GBADioramaDumpFrame(struct GBAVideoGLRenderer* renderer) {
++	static unsigned frame;
++	static bool singleDone;
++	static unsigned sequenceIndex;
++	static unsigned sequenceNext;
++	static bool sequenceStarted;
++
++	const char* dir = getenv("GBA_DIORAMA_DUMP_DIR");
++	if (!dir || !*dir) {
++		++frame;
++		return;
++	}
++
++	unsigned target = _envUint("GBA_DIORAMA_DUMP_FRAME", DIORAMA_DUMP_DEFAULT_FRAME);
++	unsigned sequenceCount = _envUint("GBA_DIORAMA_SEQ_COUNT", 0);
++	unsigned sequenceStep = _envUint("GBA_DIORAMA_SEQ_STEP", DIORAMA_DEFAULT_SEQ_STEP);
++	if (sequenceStep == 0) {
++		sequenceStep = 1;
++	}
++
++	/* Touch $GBA_DIORAMA_DUMP_DIR/trigger to capture the current frame
++	 * without restarting the emulator.  This is how menu/battle states are
++	 * captured after the initial frame target has already passed. */
++	char triggerPath[DIORAMA_PATH_MAX];
++	bool triggered = false;
++	if (_joinPath(triggerPath, sizeof(triggerPath), dir, "trigger")) {
++		struct VFile* trigger = VFileOpen(triggerPath, O_RDONLY);
++		if (trigger) {
++			trigger->close(trigger);
++			triggered = true;
++			remove(triggerPath);
++		}
++	}
++
++	unsigned current = frame++;
++
++	if (renderer->scale <= 0) {
++		fprintf(stderr, "gba-diorama: renderer scale is %d; launch with -C videoScale=2\n", renderer->scale);
++		return;
++	}
++
++	bool wantSingle = triggered || (!singleDone && current == target);
++	bool wantSequence = false;
++	if (sequenceCount > 0 && sequenceIndex < sequenceCount) {
++		if (!sequenceStarted) {
++			sequenceStarted = true;
++			sequenceNext = target;
++		}
++		wantSequence = current >= sequenceNext;
++	}
++
++	if (!wantSingle && !wantSequence) {
++		return;
++	}
++
++	if (wantSingle) {
++		if (!triggered) {
++			singleDone = true;
++		}
++		_dumpFrame(renderer, dir, current, 0, 0, 0);
++	}
++
++	if (wantSequence) {
++		char sequenceRoot[DIORAMA_PATH_MAX];
++		char frameDir[DIORAMA_PATH_MAX];
++		char frameName[32];
++		snprintf(frameName, sizeof(frameName), "%05u", current);
++		if (_joinPath(sequenceRoot, sizeof(sequenceRoot), dir, "seq") &&
++		    _ensureDir(sequenceRoot) &&
++		    _joinPath(frameDir, sizeof(frameDir), sequenceRoot, frameName) &&
++		    _ensureDir(frameDir)) {
++			_dumpFrame(renderer, frameDir, current, sequenceIndex, sequenceCount, sequenceStep);
++		}
++		++sequenceIndex;
++		sequenceNext = current + sequenceStep;
++		if (sequenceIndex >= sequenceCount) {
++			singleDone = true;
++		}
++	}
 +}
 +
 +#endif

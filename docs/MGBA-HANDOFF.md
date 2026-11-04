@@ -100,6 +100,46 @@ Implementation notes:
 - Touch `$GBA_DIORAMA_DUMP_DIR/trigger` to capture the current frame on demand;
   the hook removes the trigger after writing. This works after the target frame
   has already passed.
+
+### Sequence capture (world atlas)
+
+Set `GBA_DIORAMA_SEQ_COUNT` and `GBA_DIORAMA_SEQ_STEP` to write a short
+sequence instead of a single frame. The first capture lands at the target frame
+and each following capture is `step` frames later:
+
+```bash
+GBA_DIORAMA_DUMP_FRAME=240 \
+GBA_DIORAMA_SEQ_COUNT=4 \
+GBA_DIORAMA_SEQ_STEP=60 \
+  tools/run-mgba-diorama.sh /path/to/emerald.gba 240 4 60
+```
+
+The output layout is:
+
+```
+dumps/<game>/                 single-frame dump at the target frame
+dumps/<game>/seq/00240/       complete dump (same files as the base directory)
+dumps/<game>/seq/00300/
+dumps/<game>/seq/00360/
+dumps/<game>/seq/00420/
+```
+
+Each sequence directory is a normal dump, and its `meta.json` gains
+`"sequence": {"index": i, "count": n, "step": s}`. The base directory still
+receives the single-frame dump, and `trigger` keeps working during and after
+the sequence. The hook creates `seq/` and the per-frame directories; the base
+`GBA_DIORAMA_DUMP_DIR` must already exist.
+
+Feed the `seq` directory (not its parent) to the atlas:
+
+```bash
+python3 -m gba_diorama --atlas dumps/<game>/seq --out /tmp/atlas.png
+```
+
+Pick a target frame after the scene has settled. A transition or fade frame in
+the sequence changes VRAM and makes the atlas discard the earlier frames for
+that layer (by design), and it can also poison the parallax estimate.
+
 - Readback uses `glReadPixels` from each layer FBO, not `glGetTexImage`, so the
   same code works on GLES3. Both the BG and OBJ FBOs are already top-down;
   `_readLayer(..., flipY)` flips only when requested. The hook passes `false`
@@ -233,6 +273,10 @@ directory, and enables the target frame:
 ```bash
 tools/run-mgba-diorama.sh /path/to/emerald.gba 4800
 touch dumps/<game>/trigger   # capture the current frame on demand
+
+# 4 frames, 60 frames apart, starting at frame 240
+tools/run-mgba-diorama.sh /path/to/emerald.gba 240 4 60
+python3 -m gba_diorama --atlas dumps/<game>/seq --out /tmp/atlas.png
 ```
 
 Do not launch a ROM from `/tmp`; mGBA shows a temporary-storage warning and

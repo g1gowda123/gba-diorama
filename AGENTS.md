@@ -27,6 +27,10 @@ python -m gba_diorama --yaw 18 --width 1920 --height 1080 --out /tmp/yaw18.png
 # Launch the patched mGBA GL renderer (desktop GL, 2x, muted)
 tools/run-mgba-diorama.sh /path/to/game.gba 4800
 touch dumps/<game>/trigger   # capture the current frame on demand
+
+# Capture a 4-frame sequence for the world atlas (start 240, step 60)
+tools/run-mgba-diorama.sh /path/to/game.gba 240 4 60
+python -m gba_diorama --atlas dumps/<game>/seq --out /tmp/atlas.png
 ```
 
 Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
@@ -89,8 +93,10 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   `--profile`).
 - `atlas.py`: offline E1 path; discovers dump sequences, stitches BG layers at
   their scroll offsets into a larger canvas, records per-layer coverage, and
-  invalidates frames when a layer's VRAM hash changes. Automatic in-emulator
-  sequence capture is still missing.
+  invalidates frames when a layer's VRAM hash changes. The mGBA hook can emit a
+  short sequence (`GBA_DIORAMA_SEQ_COUNT` / `GBA_DIORAMA_SEQ_STEP`) into
+  `dumps/<game>/seq/`; automatic sequence capture is in, but the confidence
+  fallback still needs validation on real scrolling scenes.
 - `parallax.py`: E2 prototype; estimates per-layer scroll ratios and a
   confidence value from a dump sequence. `apply_parallax_to_profile()` wires
   confident estimates into layer heights and ignores low-factor backdrops.

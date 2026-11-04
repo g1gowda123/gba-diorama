@@ -134,12 +134,17 @@ To capture a frame from mGBA's OpenGL renderer, apply
 tools/run-mgba-diorama.sh /path/to/game.gba 4800
 # later, while the game is running:
 touch dumps/<game>/trigger
+
+# Or capture a short sequence for the world atlas: 4 frames, 60 apart
+tools/run-mgba-diorama.sh /path/to/game.gba 240 4 60
+python -m gba_diorama --atlas dumps/<game>/seq --out /tmp/atlas.png
 ```
 
 The launcher selects desktop OpenGL (`QT_OPENGL=desktop`), enables the GL
 renderer at 2× scale, and starts muted. It uses a permanent ROM path so mGBA
 does not show the temporary-storage warning. The dump hook writes BG0–BG3,
-OBJ, VRAM, palette, OAM, and registers; `trigger` captures on demand.
+OBJ, VRAM, palette, OAM, and registers; `trigger` captures on demand, and
+`seq/` receives one complete dump per sequence frame.
 
 ## How it works
 
@@ -202,11 +207,11 @@ positions:
 python -m gba_diorama --atlas dumps/route-a dumps/route-b --out /tmp/atlas.png
 ```
 
-The atlas is still offline. It records a per-layer coverage mask, and
-`--atlas` prints the E2 scroll-ratio/confidence estimate for each layer, but it
-does not yet invalidate regions when VRAM changes or capture a sequence
-automatically; those are the next steps before it can replace the temporary
-sparse-overlay skip.
+The atlas records a per-layer coverage mask, invalidates a layer when its VRAM
+hash changes between frames, and `--atlas` prints the E2 scroll-ratio/confidence
+estimate for each layer. The mGBA hook can capture a sequence automatically
+(`GBA_DIORAMA_SEQ_COUNT` / `GBA_DIORAMA_SEQ_STEP`); validate parallax confidence
+on real scrolling scenes before replacing the temporary sparse-overlay skip.
 
 ## What works
 

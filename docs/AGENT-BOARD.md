@@ -164,13 +164,11 @@ player/NPC are upright, and the path runs below the ledge.
 
 ## Claims (current)
 
-- `[CLAIMED]` Agent A — `gba_diorama/mesh.py`, `gba_diorama/dump.py`,
-  `gba_diorama/relief.py`, `tests/test_relief.py`, `tests/test_scene.py`,
-  `profiles/emerald-route101.toml`.
-- `[RELEASED]` Agent B (2026-11-04) — world atlas sequence capture + VRAM invalidation + parallax-to-height:
-  `gba_diorama/atlas.py`, `gba_diorama/parallax.py`,
-  `gba_diorama/pipeline.py`, `gba_diorama/profiles.py`,
-  `gba_diorama/__main__.py`, `tests/test_atlas.py`, `tests/test_parallax.py`.
+- `[CLAIMED]` Agent B (2026-11-04) — raw tree billboards, detection crown regrowth, and pixel scale matching:
+  `gba_diorama/relief.py`, `gba_diorama/mesh.py`, `gba_diorama/dump.py`,
+  `gba_diorama/profiles.py`, `profiles/emerald-route101.toml`,
+  `tests/test_relief.py`.
+- `[RELEASED]` Agent A (2026-11-04) — P5b houses landed.
 
 ### Agent A → Agent B
 
@@ -253,3 +251,59 @@ player/NPC are upright, and the path runs below the ledge.
 - Also refreshed stale atlas/parallax/test-count statements after Agent B's
   `b666985` (58 tests).
 - No code changes in this entry; Gemini is working in the tree.
+
+### 2026-11-04 — Agent A — claiming mGBA sequence capture (Task 1 remainder)
+
+- **State verified (18:16):** working tree clean at `aaa6614`;
+  `python3 -m pytest -q` → **58 passed**.
+- **Taking:** the remaining Task 1 piece — an mGBA sequence-capture mode in
+  `patches/mgba-diorama-dump.patch` that writes N frames spaced by a step into
+  `$GBA_DIORAMA_DUMP_DIR/seq/<frame>`, so `atlas.discover_sequence()` can
+  consume real scrolling frames. Claimed files:
+  `patches/mgba-diorama-dump.patch`, `tools/run-mgba-diorama.sh`,
+  `docs/MGBA-HANDOFF.md`, `README.md`, `AGENTS.md`, this board.
+- **Agent B:** keep Task 2 (`card_mode = "raw"`) in the Python files
+  (`relief.py`, `mesh.py`, `profiles.py`, `dump.py`, `emerald-route101.toml`).
+
+### 2026-11-04 — Agent B — implementing Task 2 (raw tree billboards, crown detection, and pixel scaling)
+
+- **Claimed:** `gba_diorama/relief.py`, `gba_diorama/mesh.py`, `gba_diorama/dump.py`, `gba_diorama/profiles.py`, `profiles/emerald-route101.toml`, `tests/test_relief.py`.
+- **User feedback addressed:**
+  1. *Detection crown truncation:* Crown highlights (`[181, 255, 132]` with $V=1.0$) were previously dropped by `value_max = 0.95`. Updating `value_max = 1.0` and adding geodesic distance-bounded regrowth (`max_dist = open_iterations + 1`) from opened component seeds back into `raw_mask`. This restores the eroded 8–10 rows of the curved treetop crown without merging separated trees into vertical columns.
+  2. *Pixel size mismatch & scaling:* Camera-facing billboards have zero pitch foreshortening and tilt towards the camera, making texels $1.74\times$ larger in screen area than ground texels. Adding `card_mode = "raw"` (default), `card_scale = 0.75` (matches ground texel area and restores 1.4–1.7× height ratio to player), and `card_orientation = "camera" | "world"`.
+- Proceeding to implement and verify tests.
+  (`relief.py`, `mesh.py`, `profiles.py`, `pipeline.py`, `tests/`); I will not
+  touch them. Ping this board if you need the patch or launcher.
+
+### 2026-11-04 — Agent A — mGBA sequence capture landed (Task 1)
+
+- `patches/mgba-diorama-dump.patch` now supports sequence capture:
+  `GBA_DIORAMA_SEQ_COUNT` / `GBA_DIORAMA_SEQ_STEP` write complete dumps to
+  `$GBA_DIORAMA_DUMP_DIR/seq/<frame>/`, starting at `GBA_DIORAMA_DUMP_FRAME`.
+  `meta.json` gains `"sequence": {index,count,step}`. Single-frame and
+  `trigger` behaviour are unchanged.
+- `tools/run-mgba-diorama.sh ROM [frame] [seq-count] [seq-step]` passes the new
+  variables through; docs updated in `README.md`, `AGENTS.md`, and
+  `docs/MGBA-HANDOFF.md`.
+- Rebuilt mGBA Qt from the patched tree (`cmake --build /tmp/opencode/mgba-qt`)
+  and verified on the synthetic ROM: 3 dumps at frames 30/50/70, all load via
+  `atlas.discover_sequence`, and `--atlas` renders.
+- Verified on real Emerald: 4 dumps at 120/240/360/480 in
+  `/tmp/opencode/emerald-seq/seq`; `--atlas` produced
+  `/tmp/opencode/emerald-seq-atlas.png` (`atlas_frames=4`; BG1/BG2/BG3
+  invalidated once at the transition frame).
+- `python3 -m pytest -q` on a clean worktree with only these changes:
+  **58 passed**. The main tree currently has Agent B's in-progress Task 2 edits
+  and one failing card test; that failure is not from these changes.
+- **For Agent B — two parallax findings from the real sequence** (I did not
+  touch `parallax.py` / `profiles.py`):
+  1. **Single-sample confidence saturates at 1.0.** `--atlas` on the 4-frame
+     Emerald sequence prints `BG0:0.50(1.00), BG1:0.30(1.00)` from one
+     transition-frame pair; the other frames are static. Suggest weighting
+     confidence by sample count (e.g. `n/(n+1)` or require >= 2 samples).
+  2. **Fallback can drop the ground layer.** `python3 -m gba_diorama --atlas
+     /tmp/opencode/seq-test/seq` raises `profile 'parallax-inferred' has no
+     ground layer`; `apply_parallax_to_profile` skips layers outside the
+     signature `enabled_mask`, but the ground picker uses decoded layers.
+     Always emit the ground `LayerProfile` (or clamp the ground index to an
+     enabled layer).
