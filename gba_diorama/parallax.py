@@ -115,3 +115,39 @@ def estimate_parallax_paths(
         layer_indices=layer_indices,
         min_motion=min_motion,
     )
+
+
+def infer_layer_height(
+    estimate: ParallaxEstimate | None,
+    default_height: float,
+    *,
+    min_confidence: float = 0.4,
+    scale: float = 20.0,
+    min_height: float = 2.0,
+    max_height: float = 40.0,
+) -> tuple[float, bool]:
+    """Infer overlay height from parallax estimate with confidence fallback.
+
+    Returns (height, used_parallax). If confidence is below min_confidence,
+    factor is None, or layer has insufficient motion, falls back to default_height.
+    """
+    if estimate is None or estimate.factor is None or estimate.confidence < min_confidence:
+        return default_height, False
+
+    factor = estimate.factor
+    # Scrolling faster than ground -> foreground / higher elevation
+    if factor > 1.05:
+        h = 6.0 + scale * (factor - 1.0)
+        return float(np.clip(round(h, 1), min_height, max_height)), True
+
+    # Scrolling slower than ground -> recessed / lower elevation
+    if 0.05 < factor < 0.95:
+        h = max(-20.0, -scale * (1.0 - factor))
+        return float(round(h, 1)), True
+
+    # Near 1.0 -> same plane as ground
+    if 0.95 <= factor <= 1.05:
+        return 0.0, True
+
+    # Static backdrop (<= 0.05) or unsupported factor
+    return default_height, False

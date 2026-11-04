@@ -78,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
             all_layers=args.all_layers,
             force_3d=args.force_3d,
             profile_path=args.profile,
+            flip_y=args.flip_y,
         )
         source = f"atlas={len(args.atlas)} dumps"
     else:
@@ -118,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"signature={signature}")
         print(f"layers={result.scene.layers}")
+        if atlas is not None and atlas.invalidations:
+            invs = [f"BG{k}:{v}" for k, v in sorted(atlas.invalidations.items()) if v > 0]
+            if invs:
+                print(f"vram_invalidations={', '.join(invs)}")
         if atlas is not None and atlas.parallax:
             estimates = []
             for index, estimate in sorted(atlas.parallax.items()):

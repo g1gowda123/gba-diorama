@@ -9,7 +9,7 @@ overridden per game or romhack without touching Python code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -214,6 +214,94 @@ class SceneProfile:
             if layer.is_ground:
                 return layer.side_material or "dirt"
         return "dirt"
+
+
+def apply_parallax_to_profile(
+    profile: SceneProfile | None,
+    parallax: dict[int, ParallaxEstimate],
+    ground_layer: int,
+    *,
+    signature: SceneSignature | None = None,
+    min_confidence: float = 0.4,
+    height_scale: float = 20.0,
+) -> SceneProfile:
+    """Wire parallax estimates into layer heights and roles with confidence fallback."""
+
+    # Imported lazily: parallax imports dump, and dump imports profiles.
+    from .parallax import infer_layer_height
+
+    if profile is None:
+        layers: list[LayerProfile] = []
+        enabled = signature.enabled_mask if signature is not None else 0x0F
+        for bg in (0, 1, 2, 3):
+            if not (enabled & (1 << bg)):
+                continue
+            if bg == ground_layer:
+                layers.append(LayerProfile(bg=bg, role="ground", height=0.0))
+                continue
+            estimate = parallax.get(bg)
+            if (
+                estimate is not None
+                and estimate.confidence >= min_confidence
+                and estimate.factor is not None
+            ):
+                if estimate.factor <= 0.05 and bg > ground_layer:
+                    layers.append(LayerProfile(bg=bg, role="ignore"))
+                    continue
+                h, _ = infer_layer_height(
+                    estimate,
+                    default_height=6.0 if bg == 2 else 18.0,
+                    min_confidence=min_confidence,
+                    scale=height_scale,
+                )
+                layers.append(LayerProfile(bg=bg, role="world", height=h))
+            else:
+                layers.append(
+                    LayerProfile(
+                        bg=bg,
+                        role="world",
+                        height=6.0 if bg == 2 else 18.0,
+                    )
+                )
+        return SceneProfile(
+            name="parallax-inferred",
+            layers=tuple(layers),
+            match=ProfileMatch(),
+        )
+
+    updated_layers: list[LayerProfile] = []
+    for layer in profile.layers:
+        if layer.bg == ground_layer or layer.is_ui:
+            updated_layers.append(layer)
+            continue
+        estimate = parallax.get(layer.bg)
+        if (
+            estimate is not None
+            and estimate.confidence >= min_confidence
+            and estimate.factor is not None
+        ):
+            if estimate.factor <= 0.05 and layer.bg > ground_layer and layer.role == "world":
+                updated_layers.append(replace(layer, role="ignore"))
+                continue
+            default_h = (
+                layer.height
+                if layer.height > 0
+                else (6.0 if layer.bg == 2 else 18.0)
+            )
+            inferred_h, used = infer_layer_height(
+                estimate,
+                default_height=default_h,
+                min_confidence=min_confidence,
+                scale=height_scale,
+            )
+            if used:
+                updated_layers.append(replace(layer, height=inferred_h))
+            else:
+                updated_layers.append(layer)
+        else:
+            updated_layers.append(layer)
+
+    return replace(profile, layers=tuple(updated_layers))
 
 
 @dataclass

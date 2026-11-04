@@ -8,12 +8,17 @@ from pathlib import Path
 
 import numpy as np
 
-from .atlas import AtlasResult, stitch_paths
+from .atlas import AtlasResult, discover_sequence, stitch_paths
 from .dump import DumpWorld, GbaDump, load_dump
 from .mesh import Scene, build_scene, scene_extent
 from .parallax import estimate_parallax_paths
 from .post import apply_post
-from .profiles import ProfileBook, SceneProfile, SceneSignature
+from .profiles import (
+    ProfileBook,
+    SceneProfile,
+    SceneSignature,
+    apply_parallax_to_profile,
+)
 from .raster import Camera, render
 from .synthetic import WORLD_PX, SyntheticWorld, build_synthetic_world
 
@@ -269,16 +274,30 @@ def render_atlas(
     profile: SceneProfile | None = None,
     profile_path: str | Path | None = None,
     layer_indices: tuple[int, ...] = (1, 2, 3),
+    flip_y: bool | None = None,
 ) -> DumpResult:
     """Stitch several dumps into a world atlas, then render it like one dump."""
 
-    atlas = stitch_paths(roots, layer_indices=layer_indices)
+    # Expand any sequence directories
+    all_paths: list[Path] = []
+    for root in roots:
+        p = Path(root)
+        if p.is_dir() and not (p / "meta.json").exists():
+            all_paths.extend(discover_sequence(p))
+        else:
+            all_paths.append(p)
+
+    atlas = stitch_paths(all_paths, layer_indices=layer_indices, flip_y=flip_y)
     dump = atlas.dump
     signature = SceneSignature.from_meta(dump.meta)
     if profile is None and profile_path is not None:
         profile = ProfileBook.from_path(profile_path).match(
             signature, dump.game_code
         )
+
+    if flip_y is None and profile is not None and profile.flip_y is not None:
+        if profile.flip_y != bool(dump.meta.get("flip_y", False)):
+            dump = load_dump(dump.root, flip_y=profile.flip_y)
 
     reason = None if force_3d else _ui_fallback_reason(dump)
     if reason:
@@ -298,12 +317,32 @@ def render_atlas(
             atlas=atlas,
         )
 
+    # Temporary world to determine the ground layer for parallax reference
+    temp_world = DumpWorld.from_dump(
+        dump,
+        min_overlay_coverage=0.0 if all_layers else 0.05,
+        profile=profile,
+    )
+    ground_index = temp_world.ground_layer
+
+    try:
+        atlas.parallax = estimate_parallax_paths(all_paths, ground_index)
+    except Exception:
+        atlas.parallax = None
+
+    if atlas.parallax:
+        profile = apply_parallax_to_profile(
+            profile,
+            atlas.parallax,
+            ground_index,
+            signature=signature,
+        )
+
     world = DumpWorld.from_dump(
         dump,
         min_overlay_coverage=0.0 if all_layers else 0.05,
         profile=profile,
     )
-    atlas.parallax = estimate_parallax_paths(roots, world.ground_layer)
     camera = dump_camera(world, width, height, yaw_deg, profile=profile)
     scene = build_scene(world, camera)
     image = render(
