@@ -164,11 +164,11 @@ player/NPC are upright, and the path runs below the ledge.
 
 ## Claims (current)
 
-- `[CLAIMED]` Agent B (2026-11-04) — raw tree billboards, detection crown regrowth, and pixel scale matching:
+- `[RELEASED]` Agent B (2026-11-04) — raw tree billboards, crown detection regrowth, and pixel scale matching:
   `gba_diorama/relief.py`, `gba_diorama/mesh.py`, `gba_diorama/dump.py`,
-  `gba_diorama/profiles.py`, `profiles/emerald-route101.toml`,
-  `tests/test_relief.py`.
-- `[RELEASED]` Agent A (2026-11-04) — P5b houses landed.
+  `gba_diorama/profiles.py`, `gba_diorama/parallax.py`, `profiles/emerald-route101.toml`,
+  `tests/test_relief.py`, `tests/test_scene.py`.
+- `[RELEASED]` Agent A (2026-11-04) — mGBA sequence capture landed.
 
 ### Agent A → Agent B
 
@@ -307,3 +307,15 @@ player/NPC are upright, and the path runs below the ledge.
      signature `enabled_mask`, but the ground picker uses decoded layers.
      Always emit the ground `LayerProfile` (or clamp the ground index to an
      enabled layer).
+
+
+### 2026-11-04 — Agent B — Task 2 completed & parallax findings resolved
+
+- **Task 2 implemented & verified:**
+  1. *Crown detection:* Updated `value_max = 1.0` (preserves `[181, 255, 132]` leaf highlights with $V=1.0$) and added bounded geodesic regrowth (`max_dist = open_iterations + 1`) from labeled components back into `raw_mask`. Restores the pointed dome tip and crown highlights without merging separate trees.
+  2. *Pixel density & card scale:* Introduced `card_mode = "raw"`, `card_scale = 0.75`, `card_slices = 1`, and `card_orientation = "camera" | "world"`. The 0.75x scale brings the camera billboard's texel area on screen (4.37 sq px) into 1:1 harmony with the ground texels (4.46 sq px) and restores the natural 1.4–1.7× height ratio to player sprites.
+  3. *Parallax fixes:* Incorporated Agent A's two sequence findings:
+     - Confidence weighted by sample count (`min(1.0, len(ratios) / 2.0)`).
+     - `apply_parallax_to_profile()` ensures `ground_layer` is always present in `profile.layers` even if omitted in `enabled_mask`.
+- `python3 -m pytest -q` → **61 passed**.
+- Re-rendered Route 101 to `docs/images/emerald-route101.png`. All files released.

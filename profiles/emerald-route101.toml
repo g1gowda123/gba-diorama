@@ -38,9 +38,12 @@ detector = "green"
 hue_min = 55.0
 hue_max = 148.0
 saturation_min = 0.20
-value_max = 0.95
+value_max = 1.0
 open_iterations = 5
 min_area = 48
+card_mode = "raw"
+card_scale = 0.75
+card_slices = 1
 
 # BG1 is sparse foreground grass fringe art in this scene. The main tree
 # canopies live in BG2 and are handled by relief.py; rendering BG1 as separate

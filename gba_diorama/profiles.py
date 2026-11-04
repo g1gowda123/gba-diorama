@@ -158,8 +158,12 @@ class LayerProfile:
     hue_min: float = 55.0
     hue_max: float = 148.0
     saturation_min: float = 0.20
-    value_max: float = 0.95
+    value_max: float = 1.0
     open_iterations: int = 2
+    card_mode: str = "raw"
+    card_scale: float = 0.75
+    card_slices: int = 1
+    card_orientation: str = "camera"
 
     @property
     def is_ground(self) -> bool:
@@ -263,6 +267,8 @@ def apply_parallax_to_profile(
                         height=6.0 if bg == 2 else 18.0,
                     )
                 )
+        if not any(lp.bg == ground_layer for lp in layers):
+            layers.append(LayerProfile(bg=ground_layer, role="ground", height=0.0))
         return SceneProfile(
             name="parallax-inferred",
             layers=tuple(layers),
@@ -377,8 +383,12 @@ def _layer_from_dict(data: dict[str, Any], source: str) -> LayerProfile:
         hue_min=float(data.get("hue_min", 55.0)),
         hue_max=float(data.get("hue_max", 148.0)),
         saturation_min=float(data.get("saturation_min", 0.20)),
-        value_max=float(data.get("value_max", 0.95)),
+        value_max=float(data.get("value_max", 1.0)),
         open_iterations=int(data.get("open_iterations", 2)),
+        card_mode=str(data.get("card_mode", "raw")).lower(),
+        card_scale=float(data.get("card_scale", 0.75)),
+        card_slices=int(data.get("card_slices", 1)),
+        card_orientation=str(data.get("card_orientation", "camera")).lower(),
     )
 
 

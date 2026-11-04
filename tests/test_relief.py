@@ -239,3 +239,40 @@ def test_inpaint_regions_replaces_object_with_surrounding_texture():
     assert not np.any(np.all(out[mask, :3] == (255, 0, 255), axis=-1))
     # The fill comes from the green terrain, not the magenta object.
     assert out[mask, 1].mean() > out[mask, 0].mean()
+
+
+def test_detect_canopies_preserves_pointed_crown_tip_and_highlights():
+    image = np.zeros((64, 64, 4), dtype=np.uint8)
+    image[..., :3] = (112, 192, 160)
+    image[..., 3] = 255
+
+    # Main canopy body from y=14 to 34, width 24
+    image[14:34, 20:44, :3] = (50, 130, 40)
+    # Narrow pointed crown tip from y=10 to 14, width 6
+    image[10:14, 29:35, :3] = (50, 130, 40)
+    # High-value leaf highlight pixels (V=1.0)
+    image[11:13, 30:34, :3] = (181, 255, 132)
+
+    components = detect_canopies(image, open_iterations=3, min_area=48)
+    assert len(components) == 1
+    comp = components[0]
+    # Regrowth restores the pointed crown tip at y=10
+    assert comp.bbox[1] == 10
+    # Highlight pixels at y=11..12, x=30..34 are preserved in component mask
+    assert comp.texture is not None
+    assert comp.texture[1, 10, 3] == 255
+    assert np.array_equal(comp.texture[1, 10, :3], [181, 255, 132])
+
+
+def test_canopy_field_card_mode_raw_uses_authored_texture():
+    image = _scene()
+    components = detect_canopies(image)
+    field_raw = build_canopy_field(image, components, card_mode="raw")
+    field_proc = build_canopy_field(image, components, card_mode="procedural")
+
+    assert field_raw is not None and field_proc is not None
+    assert len(field_raw.cards) == len(components)
+    # Raw cards match the component texture exactly
+    assert np.array_equal(field_raw.cards[0][0], components[0].texture)
+    # Procedural cards run procedural lobe synthesis (different shape/height)
+    assert field_proc.cards[0][0].shape != field_raw.cards[0][0].shape

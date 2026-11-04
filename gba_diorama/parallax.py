@@ -92,10 +92,11 @@ def estimate_parallax(
         )
         consistency = 1.0 / (1.0 + 2.0 * spread)
         motion_confidence = min(1.0, total_weight / (min_motion * 4.0))
+        sample_confidence = min(1.0, len(ratios) / 2.0)
         estimates[index] = ParallaxEstimate(
             layer=index,
             factor=factor,
-            confidence=motion_confidence * consistency,
+            confidence=motion_confidence * consistency * sample_confidence,
             samples=len(ratios),
             motion=total_weight,
         )

@@ -625,12 +625,25 @@ def _add_prebuilt_cards(
     ground = world.layers[getattr(world, "ground_layer", 3)]
     img_h, img_w = ground.shape[:2]
     scale = WORLD_PX / max(img_w, img_h)
+    card_scale = float(getattr(world, "canopy_card_scale", 1.0))
+    card_slices = int(getattr(world, "canopy_card_slices", 3))
+    orientation = str(getattr(world, "canopy_card_orientation", "camera")).lower()
+
+    if card_slices >= 3:
+        slices = (
+            (0.20, 1.06, 0.62),
+            (0.10, 1.03, 0.80),
+            (0.0, 1.0, 1.0),
+        )
+    else:
+        slices = ((0.0, 1.0, 1.0),)
+
     for index, (image, (x0, y0, x1, y1)) in enumerate(cards):
         height, width = image.shape[:2]
         if width < 4 or height < 4:
             continue
-        card_width = width * scale
-        card_height = height * scale
+        card_width = width * scale * card_scale
+        card_height = height * scale * card_scale
         cx = (x0 + x1) * 0.5 * scale
         # Stand the card at the front edge of its source footprint.  The
         # cleared ground lies behind it, so it does not read as an empty patch
@@ -638,19 +651,14 @@ def _add_prebuilt_cards(
         cz = (y1 - 1) * scale
         base = np.array([cx, world.ground_height(cx, cz), cz], dtype=np.float32)
         texture = Texture(image, name=f"{name}-{index}")
-        # Three depth slices: a darker, slightly wider card behind the main
-        # card gives the silhouette thickness and separates it from the tree
-        # behind.  All slices still use the same source-art texture.
-        slices = (
-            (0.20, 1.06, 0.62),
-            (0.10, 1.03, 0.80),
-            (0.0, 1.0, 1.0),
-        )
         for depth, size_scale, shade in slices:
             slice_base = base + camera.forward * (card_height * depth)
             slice_w = card_width * size_scale
             slice_h = card_height * (0.98 if depth else 1.0)
-            top = slice_base + camera.up * slice_h
+            if orientation == "world":
+                top = slice_base + np.array([0.0, slice_h, 0.0], dtype=np.float32)
+            else:
+                top = slice_base + camera.up * slice_h
             half = camera.right * (slice_w * 0.5)
             _quad(
                 out,

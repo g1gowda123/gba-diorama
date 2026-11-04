@@ -368,7 +368,7 @@ def detect_canopies(
     hue_min: float = 55.0,
     hue_max: float = 148.0,
     saturation_min: float = 0.20,
-    value_max: float = 0.95,
+    value_max: float = 1.0,
     open_iterations: int = 2,
 ) -> list[CanopyComponent]:
     """Find saturated green blobs that look like tree/hedge canopies."""
@@ -420,6 +420,31 @@ def detect_canopies(
                         q.append((ny, nx))
                         seed_queue.append((ny, nx))
             label_id += 1
+
+    if open_iterations:
+        # Geodesic regrowth: regrow opened seeds back into raw_mask within bounded
+        # distance (open_iterations + 1) to restore eroded crown tips and highlights
+        # without merging distinct tree volumes.
+        max_dist = max(4, open_iterations + 1)
+        regrow_queue: deque[tuple[int, int, int, int]] = deque()
+        for y in range(height):
+            for x in range(width):
+                if labels[y, x] > 0:
+                    regrow_queue.append((y, x, 0, labels[y, x]))
+        while regrow_queue:
+            cy, cx, dist, cid = regrow_queue.popleft()
+            if dist >= max_dist:
+                continue
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = cy + dy, cx + dx
+                if (
+                    0 <= ny < height
+                    and 0 <= nx < width
+                    and raw_mask[ny, nx]
+                    and labels[ny, nx] == 0
+                ):
+                    labels[ny, nx] = cid
+                    regrow_queue.append((ny, nx, dist + 1, cid))
 
     components: list[CanopyComponent] = []
     for cid in range(1, label_id):
@@ -938,6 +963,7 @@ def build_canopy_field(
     tile: int = 4,
     min_height: float = 4.0,
     max_height: float = 15.0,
+    card_mode: str = "raw",
 ) -> CanopyField | None:
     """Turn canopy components into cell-aligned height and cutout data."""
 
@@ -985,9 +1011,13 @@ def build_canopy_field(
 
     cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = []
     for component in components:
-        card = make_side_view_card(component)
-        if card is not None:
-            cards.append((card, component.bbox))
+        if card_mode == "raw":
+            if component.texture is not None:
+                cards.append((component.texture, component.bbox))
+        else:
+            card = make_side_view_card(component)
+            if card is not None:
+                cards.append((card, component.bbox))
 
     return CanopyField(
         mask=mask,

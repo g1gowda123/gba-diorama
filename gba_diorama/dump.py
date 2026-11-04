@@ -390,6 +390,9 @@ class DumpWorld:
     canopy_cards: list[tuple[np.ndarray, tuple[int, int, int, int]]] = field(
         default_factory=list
     )
+    canopy_card_scale: float = 0.75
+    canopy_card_slices: int = 1
+    canopy_card_orientation: str = "camera"
     structures: list = field(default_factory=list)
     billboard_layers: dict[
         int, tuple[np.ndarray, list[tuple[int, int, int, int]]]
@@ -512,7 +515,11 @@ class DumpWorld:
             # A uniform green field is not a forest.  Only lift components
             # when they cover a plausible fraction of the world layer.
             if components and sum(c.area for c in components) < 0.40 * h * w:
-                canopy = build_canopy_field(unified_ground, components)
+                canopy = build_canopy_field(
+                    unified_ground,
+                    components,
+                    card_mode=ground_profile.card_mode,
+                )
                 if canopy is not None:
                     canopy_present = canopy.present
                     canopy_height = canopy.heights
@@ -652,6 +659,9 @@ class DumpWorld:
             canopy_texture=canopy_texture,
             canopy_shadows=canopy_shadows,
             canopy_cards=canopy_cards,
+            canopy_card_scale=getattr(ground_profile, "card_scale", 0.75),
+            canopy_card_slices=getattr(ground_profile, "card_slices", 1),
+            canopy_card_orientation=getattr(ground_profile, "card_orientation", "camera"),
             structures=structures,
             billboard_layers=billboard_layers,
         )

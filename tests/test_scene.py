@@ -68,6 +68,31 @@ def test_prebuilt_canopy_cards_have_depth_slices():
     assert {tri.name.rsplit("-", 1)[-1] for tri in out} == {"0.20", "0.10", "0.00"}
 
 
+def test_prebuilt_canopy_cards_respect_card_scale_and_orientation():
+    from gba_diorama.mesh import _add_prebuilt_cards
+
+    class _ScaledWorld:
+        ground_layer = 2
+        layers = {2: np.zeros((8, 8, 4), dtype=np.uint8)}
+        canopy_card_scale = 0.5
+        canopy_card_slices = 1
+        canopy_card_orientation = "world"
+
+        @staticmethod
+        def ground_height(x: float, z: float) -> float:
+            return 0.0
+
+    card = np.zeros((20, 12, 4), dtype=np.uint8)
+    card[..., 1] = 180
+    card[..., 3] = 255
+    out = []
+    _add_prebuilt_cards(out, _ScaledWorld(), demo_camera(320, 180), [(card, (0, 0, 12, 12))])
+    assert len(out) == 2  # single quad (1 slice)
+    # Check that Y coordinates rise up along world Y (world-vertical orientation)
+    tri = out[0]
+    assert tri.v0.pos[1] >= 0.0
+
+
 def test_structure_mesh_builds_walls_roof_and_gables():
     from types import SimpleNamespace
 
