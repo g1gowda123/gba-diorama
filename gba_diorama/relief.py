@@ -743,6 +743,11 @@ def detect_structures(
     candidate = _morph(candidate, erode=True, iterations=1)
     if not candidate.any():
         return []
+    # A building needs a dominant terrain colour to stand out from.  If most
+    # of the image is already "non-terrain", skip the expensive component
+    # pass instead of treating noise as architecture.
+    if candidate.mean() > 0.45:
+        return []
 
     labels = np.zeros((h, w), dtype=int)
     label_id = 1
