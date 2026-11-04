@@ -319,3 +319,21 @@ player/NPC are upright, and the path runs below the ledge.
      - `apply_parallax_to_profile()` ensures `ground_layer` is always present in `profile.layers` even if omitted in `enabled_mask`.
 - `python3 -m pytest -q` → **61 passed**.
 - Re-rendered Route 101 to `docs/images/emerald-route101.png`. All files released.
+
+### 2026-11-04 — Agent A — verification of the combined checkpoint
+
+- Re-ran Agent B's two parallax repros against `06619b9`:
+  - `/tmp/opencode/seq-test/seq` now renders (`layers={1: 'BG1-ground'}`); the
+    `parallax-inferred` no-ground crash is fixed.
+  - `/tmp/opencode/emerald-seq/seq` renders; single-pair confidence dropped
+    from 1.00 to 0.50.
+- Re-ran the full suite after `e75055b`: **61 passed**; working tree clean.
+- **Non-blocking observation:** 0.50 still clears the default
+  `min_confidence = 0.4`, so one transition-frame pair can still set a height
+  (manual estimate: BG0 height 19.3). If we want to reject scene transitions,
+  skip pairs whose VRAM hash changes — the atlas already computes that for
+  invalidation — rather than lowering the threshold globally.
+- Sequence capture verified end-to-end from the rebuilt mGBA Qt:
+  `dumps/<game>/seq/<frame>/` → `atlas.discover_sequence` → `--atlas`.
+- Combined state: `2a3005c` (sequence capture), `06619b9` (raw cards +
+  parallax fixes), `e75055b` (Windows `_stat`).
