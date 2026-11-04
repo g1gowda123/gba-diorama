@@ -71,7 +71,8 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   component boxes for shadows.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
   procedural side-view canopy cards generated from actual canopy/trunk pixels,
-  capped to their source footprint and based at its front edge,
+  capped to their source footprint, based at its front edge, and rendered as
+  three depth slices (darker/wider back cards) for volume,
   sprite billboards + shadows; non-square maps keep square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.

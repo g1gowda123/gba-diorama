@@ -637,24 +637,36 @@ def _add_prebuilt_cards(
         # in front of the tree.
         cz = (y1 - 1) * scale
         base = np.array([cx, world.ground_height(cx, cz), cz], dtype=np.float32)
-        # A small forward lean keeps the card from looking pasted onto the map.
-        base = base + camera.forward * (card_height * 0.03)
-        top = base + camera.up * card_height
-        half = camera.right * (card_width * 0.5)
-        _quad(
-            out,
-            base - half,
-            base + half,
-            top + half,
-            top - half,
-            (0.0, 1.0),
-            (1.0, 1.0),
-            (1.0, 0.0),
-            (0.0, 0.0),
-            Texture(image, name=f"{name}-{index}"),
-            alpha_test=True,
-            name=name,
+        texture = Texture(image, name=f"{name}-{index}")
+        # Three depth slices: a darker, slightly wider card behind the main
+        # card gives the silhouette thickness and separates it from the tree
+        # behind.  All slices still use the same source-art texture.
+        slices = (
+            (0.20, 1.06, 0.62),
+            (0.10, 1.03, 0.80),
+            (0.0, 1.0, 1.0),
         )
+        for depth, size_scale, shade in slices:
+            slice_base = base + camera.forward * (card_height * depth)
+            slice_w = card_width * size_scale
+            slice_h = card_height * (0.98 if depth else 1.0)
+            top = slice_base + camera.up * slice_h
+            half = camera.right * (slice_w * 0.5)
+            _quad(
+                out,
+                slice_base - half,
+                slice_base + half,
+                top + half,
+                top - half,
+                (0.0, 1.0),
+                (1.0, 1.0),
+                (1.0, 0.0),
+                (0.0, 0.0),
+                texture,
+                shade=shade,
+                alpha_test=True,
+                name=f"{name}-{index}-{depth:.2f}",
+            )
 
 
 def _add_canopy_cards(

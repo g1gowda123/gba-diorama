@@ -26,8 +26,10 @@ into a side-view card from the game's own pixels: a seeded procedural RNG
 varies the crown proportions and overlapping lobes, and the actual trunk art is
 scaled at the base. Cards are capped to their source footprint and stood at the
 front edge of it, so adjacent trees do not overlap and the cleared ground sits
-behind the card instead of in front. The cleared footprint is darkened into
-undergrowth. No synthetic trunk, sprite atlas, or hand-placed tree is used.
+behind the card instead of in front. Each tree is rendered as three depth
+slices: a darker, slightly wider card behind the main card gives the canopy
+thickness instead of a single flat cutout. The cleared footprint is darkened
+into undergrowth. No synthetic trunk, sprite atlas, or hand-placed tree is used.
 Sparse BG1 leaves use the same card treatment. `--all-layers` shows the
 unprofiled version. Both the BG and OBJ FBOs are top-down. The cards are a
 stylized 3D2D approximation: the source art is top-down, so the result reads as
@@ -205,8 +207,8 @@ sparse-overlay skip.
   extents, and OBJ-layer sprites cropped from OAM entries.
 - Canopy cards from BG2/BG1: foliage-color component detection, morphological
   splitting of touching trees, procedural multi-lobe side-view generation from
-  actual canopy pixels, actual-trunk scaling, ground fill-under, and contact
-  shadows.
+  actual canopy pixels, actual-trunk scaling, three depth slices per tree,
+  ground fill-under, and contact shadows.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
 - Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size

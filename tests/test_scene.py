@@ -46,3 +46,23 @@ def test_render_is_deterministic_and_does_not_mutate_scene():
     assert np.array_equal(first, second)
     assert np.array_equal(scene.triangles[0].v0.pos, before)
     assert first.std() > 1.0
+
+
+def test_prebuilt_canopy_cards_have_depth_slices():
+    from gba_diorama.mesh import _add_prebuilt_cards
+
+    class _World:
+        ground_layer = 2
+        layers = {2: np.zeros((8, 8, 4), dtype=np.uint8)}
+
+        @staticmethod
+        def ground_height(x: float, z: float) -> float:
+            return 0.0
+
+    card = np.zeros((20, 12, 4), dtype=np.uint8)
+    card[..., 1] = 180
+    card[..., 3] = 255
+    out = []
+    _add_prebuilt_cards(out, _World(), demo_camera(320, 180), [(card, (0, 0, 12, 12))])
+    assert len(out) == 6  # three quads, two triangles each
+    assert {tri.name.rsplit("-", 1)[-1] for tri in out} == {"0.20", "0.10", "0.00"}

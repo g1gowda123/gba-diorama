@@ -159,7 +159,9 @@ into the ground layer rather than living on a separate BG:
   the tree is not drawn twice and the fill does not leave a bright hole.
 - Stand each component up as a camera-facing side-view card, capped to the
   source bbox width and placed at the front edge of its footprint so the
-  cleared ground lies behind it. A deterministic
+  cleared ground lies behind it. Render three depth slices per tree: a darker,
+  slightly wider card 20% of the card height behind, a mid slice at 10%, then
+  the full-brightness front card. A deterministic
   RNG seeded by the component bbox varies the crown proportions and the number,
   placement, scale, and mirroring of a central mass plus 3-5 satellite lobes. All opaque pixels
   still come from the source canopy/trunk art; there is no sprite atlas or
