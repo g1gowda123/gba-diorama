@@ -134,8 +134,10 @@ the ground intact.
 
 ### P5. Generate the 2.5D representation
 
-- foliage: upright camera-facing card + 2-3 depth slices, using the actual
-  cutout pixels;
+- foliage: upright camera-facing billboard of the authored cutout + 2-3 depth
+  slices, using the actual pixels. Do not synthesize a new crown or stretch the
+  source; GBA tree art is already a slightly slanted view with the trunk drawn
+  in;
 - houses: box extrusion from the footprint/roof rectangle (front/side walls +
   roof plane), not a single flat card;
 - rocks/signs: cards or small boxes;

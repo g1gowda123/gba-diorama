@@ -68,54 +68,59 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `synthetic.py`: 64×64 synthetic overworld, real GBA VRAM/tilemaps, decoded
   layers 1/2/3, heights/materials/sprites.
 - `relief.py`: heuristic canopy segmentation (HSV green mask, morphological
-  opening, connected components), actual trunk composition, seeded procedural
-  multi-lobe side-view generation, cutout texture, patch-based ground fill, and
-  component boxes for shadows. `detect_structures()` segments large
-  rectangular non-terrain blobs, splits them at the eave, and returns roof/wall
-  art for the house mesher.
+  opening, connected components), authored canopy+trunk cutouts, patch-based
+  ground fill, and component boxes for shadows. The approved tree path stands
+  the raw cutout up as a camera-facing billboard; the legacy seeded procedural
+  side-view generator is still the committed default until `card_mode` lands.
+  `detect_structures()` segments large rectangular non-terrain blobs, splits
+  them at the eave, and returns roof/wall art for the house mesher.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
-  procedural side-view canopy cards generated from actual canopy/trunk pixels,
-  capped to their source footprint, based at its front edge, and rendered as
-  three depth slices (darker/wider back cards) for volume. Buildings become
-  front/side/back wall quads, two gable roof slopes, gable ends, an overhang,
-  and a contact shadow. Also sprite billboards + shadows; non-square maps keep
-  square pixels.
+  camera-facing canopy billboards from authored cutouts, capped to their source
+  footprint, based at its front edge, and rendered as three depth slices
+  (darker/wider back cards) for volume. The legacy procedural card generator is
+  still wired in by default. Buildings become front/side/back wall quads, two
+  gable roof slopes, gable ends, an overhang, and a contact shadow. Also sprite
+  billboards + shadows; non-square maps keep square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.
 - `post.py`: bloom, tilt-shift, vignette, grade.
 - `pipeline.py` / `__main__.py`: demo/dump cameras, 2D UI fallback, scene
   signatures, and CLI (`--dump`, `--atlas`, `--all-layers`, `--force-3d`,
   `--profile`).
-- `atlas.py`: offline E1 scaffold; stitches BG layers from several dumps at
-  their scroll offsets into a larger canvas and records per-layer coverage.
-  VRAM invalidation and automatic sequence capture are still missing.
+- `atlas.py`: offline E1 path; discovers dump sequences, stitches BG layers at
+  their scroll offsets into a larger canvas, records per-layer coverage, and
+  invalidates frames when a layer's VRAM hash changes. Automatic in-emulator
+  sequence capture is still missing.
 - `parallax.py`: E2 prototype; estimates per-layer scroll ratios and a
-  confidence value from a dump sequence. Not yet wired into mesh heights.
+  confidence value from a dump sequence. `apply_parallax_to_profile()` wires
+  confident estimates into layer heights and ignores low-factor backdrops.
 - `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
   signature (BG2 ground with automatic canopy cards, BG3 backdrop ignored,
   BG1 fringe art ignored; camera 35°/480/8°).
-- `tests/`: 51 tests covering decode, dump round-trip, profiles, atlas
-  stitching/coverage, parallax, canopy relief/cards, structure extraction and
-  house meshes, ground compositing, mesh, render, post, fallback, determinism.
+- `tests/`: 58 tests covering decode, dump round-trip, profiles, atlas
+  stitching/coverage/invalidation, parallax, canopy relief/cards, structure
+  extraction and house meshes, ground compositing, mesh, render, post, fallback,
+  determinism.
 
 ## Next tasks (in order)
 
-1. **World atlas sequence capture + invalidation.** `atlas.py` stitches
-   offline dumps and records coverage, but it needs VRAM-change invalidation
-   and an mGBA sequence mode before it can replace the sparse-overlay skip.
-   `parallax.py` estimates E2 ratios and `--atlas` prints them; the next step
-   is wiring those estimates into overlay heights/profiles with a confidence
-   fallback.
-2. **Profile discovery/debug UI.** Auto-load a profile directory, show the
+1. **World atlas sequence capture.** Offline discovery, VRAM-hash
+   invalidation, stitching, and parallax-to-profile height wiring are in.
+   Still needed: an mGBA sequence-capture mode and validation of the
+   confidence fallback on real scrolling scenes.
+2. **Raw tree billboards.** Replace the legacy procedural side-view generator
+   with the approved camera-facing authored cutout (`card_mode = "raw"`),
+   defaulting to the raw path and keeping `"procedural"` as an opt-in fallback.
+3. **Profile discovery/debug UI.** Auto-load a profile directory, show the
    current signature and chosen profile, and add a hotkey/overlay to cycle layer
    roles and heights. Camera overrides (`distance`, `pitch_deg`, `yaw_deg`) are
    already implemented in `SceneProfile.camera`.
-3. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
+4. **mGBA `hd2d` pass.** Port the mesh/camera to GL, keep `_finalizeLayers()` as
    fallback, add resize/deinit hooks.
-4. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM instead of cropping
+5. **Real OBJ sprites.** Decode 4bpp/8bpp OBJ tiles from OAM instead of cropping
    the composited OBJ layer.
-5. **Height heuristics.** E4 prototype is in `relief.py` for green canopy
+6. **Height heuristics.** E4 prototype is in `relief.py` for green canopy
    cards, and P5b buildings now extrude as walls + gable roofs. Extend it to
    rocks/water, non-green props, side-view silhouettes, and collision-learned
    heights; validate house detection on a real in-game dump.

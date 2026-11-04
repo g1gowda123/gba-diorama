@@ -27,15 +27,23 @@ detector can segment arbitrary custom ROM hack tilesets (such as autumn, snowy,
 or alien palettes) by discovering dominant ground terrain without hardcoded
 color constraints.
 
-Each tree becomes an upright side-view card generated from its own canopy and
-trunk pixels. A seeded RNG varies the crown proportions and overlapping lobes,
-and the crown is stretched vertically so the top-down footprint reads as a
-standing tree instead of a squat bush. Cards are capped to their source
-footprint and rendered with three depth slices (a darker, slightly wider card
-behind the main card for canopy thickness). The cleared footprint is filled
-with small patches of the surrounding ground texture, preserving the map's
-grass, path, and palette instead of leaving a flat glowing hole. No synthetic
-trunk, sprite atlas, or hand-placed tree is used.
+Each tree is lifted as a camera-facing billboard of its authored cutout: the
+canopy and trunk are taken as one connected component and stood upright in the
+world, preserving the game's own slightly slanted tree view and trunk
+placement. The source art is not re-synthesized — no procedural crown, no
+vertical stretch, and no generated trunk. Cards are capped to the source
+footprint, placed at its front edge, and rendered with depth slices for canopy
+thickness. The cleared footprint is filled with small patches of the
+surrounding ground texture, preserving the map's grass, path, and palette
+instead of leaving a flat glowing hole.
+
+![Camera-facing tree billboards](docs/images/example-camera-billboard.png)
+
+Approved tree treatment: the original authored tree cutout stood up as a
+camera-facing billboard. The source art is already a slightly slanted view, so
+the trunk is part of the authored pixels rather than something the renderer
+invents. `example-world-vertical.png` shows the same cutout on the world Y
+axis; the camera-facing version reads better from the diorama camera.
 
 Buildings use the same map-aware path. A generic detector finds large
 rectangular non-terrain components, splits each at the strongest horizontal
@@ -217,9 +225,11 @@ sparse-overlay skip.
 - Real mGBA dump rendering: content-based ground selection, non-square world
   extents, and OBJ-layer sprites cropped from OAM entries.
 - Canopy cards from BG2/BG1: foliage-color component detection, morphological
-  splitting of touching trees, procedural multi-lobe side-view generation from
-  actual canopy pixels, actual-trunk scaling, three depth slices per tree,
-  ground fill-under, and contact shadows.
+  splitting of touching trees, authored canopy+trunk cutouts, camera-facing
+  billboards, depth slices per tree, ground fill-under, and contact shadows.
+  The committed default still uses the older procedural side-view generator;
+  the approved raw-cutout billboard path is shown in
+  `docs/images/example-camera-billboard.png` and is the next switch.
 - A 2D fallback for menus/battles and non-text BG modes; `--force-3d` overrides
   it for debugging.
 - Data-only TOML scene profiles: match a BG-mode/enabled/priority/affine/size
@@ -227,7 +237,7 @@ sparse-overlay skip.
   distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 43 tests.
+- Deterministic CLI and 58 tests.
 
 ## What is not done yet
 
@@ -237,12 +247,12 @@ sparse-overlay skip.
 - Real sprites are cropped from the composited OBJ layer; OAM/OBJ tile decoding
   is still a primitive, not a full per-sprite renderer.
 - Canopy cards are a foliage-color heuristic, not semantic understanding: they
-  do not yet separate trees from green buildings. The side-view generator is
-  deliberately procedural (seeded by each component bbox) and keeps the GBA
-  palette, but the source art is top-down; the result reads as stylized pop-up
-  sprites, not hand-painted Octopath foliage. Multi-tile trees are handled as
-  one component, but dense forests still need better splitting and depth-card
-  volume, and the tiny source trunks can be hard to read at near-edge angles.
+  do not yet separate trees from green buildings. The approved treatment is a
+  camera-facing billboard of the authored canopy+trunk cutout, preserving the
+  game's slightly slanted tree view; the committed default still runs the older
+  procedural side-view generator until the `card_mode` switch lands. Multi-tile
+  trees are handled as one component, but dense forests still need better
+  splitting and depth-card volume.
 - Sparse foreground layers are still skipped by default until height inference
   can tell tree canopies from buildings.
 - Profiles are opt-in (`--profile`); there is no automatic profile discovery or

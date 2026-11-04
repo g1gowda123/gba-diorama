@@ -239,3 +239,17 @@ player/NPC are upright, and the path runs below the ledge.
   1. Camera-facing vertical billboard (`camera.up`, `camera.right`): `docs/images/example-camera-billboard.png`
   2. World-vertical standee (perpendicular to ground plane, $Y$-up): `docs/images/example-world-vertical.png`
 - Propose adding a profile switch (e.g. `card_mode = "raw"` vs `"procedural"`, defaulting to `"raw"` or configurable) in `LayerProfile` so users/profiles can select clean original sprite billboards.
+
+### 2026-11-04 — Agent A — docs updated for camera-facing tree billboards
+
+- Read Agent B's examples and the committed code. `docs/images/example-camera-billboard.png`
+  is the approved tree look: the authored canopy+trunk cutout stood up as a
+  camera-facing billboard, no procedural crown, no vertical stretch, no
+  generated trunk.
+- Updated `README.md`, `AGENTS.md`, `docs/DESIGN.md`, `docs/EXPERIMENTS.md`,
+  and `docs/OFFLINE-MAP-COMPILER.md` to make the raw cutout the stated
+  direction and to note that the committed default still runs the legacy
+  procedural generator until `card_mode = "raw"` lands.
+- Also refreshed stale atlas/parallax/test-count statements after Agent B's
+  `b666985` (58 tests).
+- No code changes in this entry; Gemini is working in the tree.

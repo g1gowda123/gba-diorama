@@ -128,7 +128,10 @@ correct BG layer, then turn them into Octopath-style cards/meshes without ML?
 - Use E0 to select the world BG (Route 101 trees are BG2 middle-layer art, not
   BG1).
 - Trees: connected components over the full BG image, then cut the actual
-  canopy + trunk pixels; generate a taller side-view card from those pixels.
+  canopy + trunk pixels and stand that authored cutout up as a camera-facing
+  billboard. Do not synthesize a new crown or stretch the source: the game's
+  tree art is already a slightly slanted view, so the trunk is part of the
+  authored pixels.
 - Houses: combine BG1 roof trim + BG2 walls/roof body, split roof vs wall,
   extrude four walls plus a roof plane.
 - Clear the source footprint with tile-aware ground replacement, not
@@ -146,9 +149,12 @@ correct BG layer, then turn them into Octopath-style cards/meshes without ML?
 **Risks:** over-extruding flat decoration; misclassifying water; battle scenes
 with different layer semantics; romhack tilesets that break color heuristics.
 
-**Status:** prototype. `relief.py` detects multi-tile green canopies, composes
-actual trunk pixels, and generates procedural side-view cards; `mesh.py` adds
-depth slices and shadows. The current Route 101 render uses BG2 for trees.
+**Status:** prototype. `relief.py` detects multi-tile green canopies and
+composes the authored canopy+trunk cutout; `mesh.py` stands it up as a
+camera-facing billboard with depth slices and shadows. The approved tree look
+is the raw cutout (`docs/images/example-camera-billboard.png`); the committed
+default still uses the older procedural side-view generator until the
+`card_mode` switch lands. The current Route 101 render uses BG2 for trees.
 `detect_structures()` and `mesh._add_structures()` implement the runtime P5b
 house path: rectangular non-terrain blobs are split at the eave and extruded
 as walls plus a gable roof with an overhang. Validated on an offline

@@ -157,24 +157,25 @@ into the ground layer rather than living on a separate BG:
 - Build a cutout texture from the component pixels and fill the corresponding
   ground pixels from a ring of surrounding grass, darkened into undergrowth, so
   the tree is not drawn twice and the fill does not leave a bright hole.
-- Stand each component up as a camera-facing side-view card, capped to the
-  source bbox width and placed at the front edge of its footprint so the
-  cleared ground lies behind it. Render three depth slices per tree: a darker,
-  slightly wider card 20% of the card height behind, a mid slice at 10%, then
-  the full-brightness front card. A deterministic
-  RNG seeded by the component bbox varies the crown proportions and the number,
-  placement, scale, and mirroring of a central mass plus 3-5 satellite lobes. All opaque pixels
-  still come from the source canopy/trunk art; there is no sprite atlas or
-  hand-placed tree. Multi-tile trees are handled as one connected component
-  because detection runs on the full BG image, not per 8×8 tile.
+- Stand each component up as a camera-facing billboard of the authored cutout,
+  capped to the source bbox width and placed at the front edge of its footprint
+  so the cleared ground lies behind it. Render depth slices per tree (a darker,
+  slightly wider card behind, a mid slice, then the full-brightness front card)
+  for canopy thickness.
+- Do not synthesize a new crown or stretch the source. GBA trees are drawn in a
+  slightly slanted view, so the trunk is already part of the authored pixels.
+  The approved look is the raw canopy+trunk cutout stood upright, not a
+  procedural side view. `docs/images/example-camera-billboard.png` is the
+  reference; the committed default still runs the older procedural generator
+  until the `card_mode` switch lands.
 - Use the component boxes for contact shadows; BG1 billboard layers use the
   same card path.
 
-The result is deliberately a pop-up sprite-card look, not a heightfield. The
-source art is top-down, so the card reads as a stylized 2.5D tree rather than a
-hand-drawn side view. This is a visual prior, not a semantic classifier; it
-currently only recognizes green foliage, and buildings/rocks/non-green props
-still need the general E4 classifier.
+The result is a pop-up sprite-card look, not a heightfield. The authored tree
+view supplies the trunk and silhouette; the renderer only lifts it. This is a
+visual prior, not a semantic classifier; it currently only recognizes green
+foliage, and buildings/rocks/non-green props still need the general E4
+classifier.
 
 ### 5.3 World atlas (prototype)
 
