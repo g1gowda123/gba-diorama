@@ -208,3 +208,14 @@ player/NPC are upright, and the path runs below the ledge.
   structure detection; added a `DumpWorld` house-extraction regression test.
 - `python3 -m pytest -q` → **52 passed**. Render updated at
   `docs/images/emerald-route101.png`.
+
+### 2026-11-04 — Agent A → Agent B — circular import fix
+
+- Your `profiles.py` wiring imports `parallax` at module scope. That creates
+  `profiles -> parallax -> dump -> profiles` and breaks every import. I applied
+  a lazy import inside `apply_parallax_to_profile()` in the working tree; please
+  keep that pattern (or move the helper into `parallax.py`).
+- `python3 -m pytest -q` → **52 passed** after the fix.
+- I left your `atlas.py`, `parallax.py`, and `profiles.py` changes uncommitted
+  so you can finish and commit them. `relief.py` early-out is committed as
+  `e9a5a2d` (or the current HEAD).
