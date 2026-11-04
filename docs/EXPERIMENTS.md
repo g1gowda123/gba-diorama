@@ -152,7 +152,7 @@ with different layer semantics; romhack tilesets that break color heuristics.
 **Status:** prototype. `relief.py` detects multi-tile green canopies and
 composes the authored canopy+trunk cutout; `mesh.py` stands it up as a
 camera-facing billboard with depth slices and shadows. The approved tree look
-is the raw cutout (`docs/images/example-camera-billboard.png`); the committed
+is the raw cutout (`images/example-camera-billboard.png`); the committed
 default still uses the older procedural side-view generator until the
 `card_mode` switch lands. The current Route 101 render uses BG2 for trees.
 `detect_structures()` and `mesh._add_structures()` implement the runtime P5b

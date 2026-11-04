@@ -43,7 +43,9 @@ Approved tree treatment: the original authored tree cutout stood up as a
 camera-facing billboard. The source art is already a slightly slanted view, so
 the trunk is part of the authored pixels rather than something the renderer
 invents. `example-world-vertical.png` shows the same cutout on the world Y
-axis; the camera-facing version reads better from the diorama camera.
+axis; the camera-facing version reads better from the diorama camera. This is
+the approved look, not yet the committed default: the code still runs the
+legacy procedural generator until the `card_mode = "raw"` switch lands.
 
 Buildings use the same map-aware path. A generic detector finds large
 rectangular non-terrain components, splits each at the strongest horizontal

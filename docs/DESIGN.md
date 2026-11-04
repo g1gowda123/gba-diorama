@@ -165,7 +165,7 @@ into the ground layer rather than living on a separate BG:
 - Do not synthesize a new crown or stretch the source. GBA trees are drawn in a
   slightly slanted view, so the trunk is already part of the authored pixels.
   The approved look is the raw canopy+trunk cutout stood upright, not a
-  procedural side view. `docs/images/example-camera-billboard.png` is the
+  procedural side view. `images/example-camera-billboard.png` is the
   reference; the committed default still runs the older procedural generator
   until the `card_mode` switch lands.
 - Use the component boxes for contact shadows; BG1 billboard layers use the
