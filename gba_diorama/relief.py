@@ -873,22 +873,26 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     # so the silhouette has tree proportions.  Oversizing the crown made
     # adjacent cards overlap and left the cleared footprint visible.
     out_w = max(10, min(96, int(round(width * rng.uniform(0.92, 1.02)))))
-    crown_h = max(18, min(160, int(round(canopy_h * rng.uniform(1.20, 1.55)))))
-    trunk_h = max(3, int(round(max(1, height - canopy_h) * rng.uniform(0.7, 1.0))))
+    crown_h = max(18, min(160, int(round(canopy_h * rng.uniform(1.25, 1.60)))))
+    # The top-down trunk is foreshortened; stretch its real pixels so the card
+    # has a visible stem instead of sitting on the ground like a bush.
+    trunk_h = max(8, min(crown_h // 2, int(round(canopy_h * rng.uniform(0.16, 0.24)))))
     out = np.zeros((crown_h + trunk_h, out_w, 4), dtype=np.uint8)
 
     # Central mass plus 2-4 satellite lobes.  Jitter and mirroring are seeded
     # by the bbox, so neighbouring trees do not share an identical silhouette.
+    # The central mass sits high enough to leave a curved underside above the
+    # trunk rather than a flat bush bottom.
     lobes: list[tuple[float, float, float, float, bool]] = [
-        (0.50, 0.48, 0.34, 0.46, False)
+        (0.50, 0.42, 0.36, 0.40, False)
     ]
     count = int(rng.integers(2, 5))
     for index in range(count):
         angle = 2.0 * np.pi * index / count + rng.uniform(-0.35, 0.35)
         cx = 0.50 + 0.20 * np.cos(angle) + rng.uniform(-0.03, 0.03)
-        cy = 0.50 + 0.20 * np.sin(angle) + rng.uniform(-0.03, 0.03)
+        cy = 0.44 + 0.18 * np.sin(angle) + rng.uniform(-0.03, 0.03)
         rx = 0.20 + rng.uniform(0.0, 0.08)
-        ry = 0.22 + rng.uniform(0.0, 0.08)
+        ry = 0.18 + rng.uniform(0.0, 0.08)
         lobes.append((cx, cy, rx, ry, bool(rng.integers(0, 2))))
 
     for cx, cy, rx, ry, mirror in lobes:
