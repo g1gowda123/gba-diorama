@@ -60,6 +60,6 @@ flat = true
 # Optional camera override. A slightly higher pitch and closer distance make
 # the screen-sized slab read as a diorama.
 [profiles.camera]
-pitch_deg = 24.0
-distance = 380.0
+pitch_deg = 16.0
+distance = 320.0
 yaw_deg = 8.0
