@@ -20,7 +20,7 @@ The first real result comes from an mGBA dump of Pokémon Emerald's Route 101:
 The dump loader picked BG2 as the ground from layer content (BG3 is a
 low-detail backdrop in this scene), composited the backdrop into transparent
 holes, cropped the player out of the OBJ layer, and rendered it as a billboard
-on a tilted plinth. It also detects saturated-green canopy regions in BG2,
+on a tilted plinth. It also detects foliage-colored canopy regions in BG2,
 separates touching trees with a morphological opening, and builds each tree
 into a side-view card from the game's own pixels: a seeded procedural RNG
 varies the crown proportions and overlapping lobes, and the actual trunk art is
@@ -220,12 +220,13 @@ sparse-overlay skip.
 - No affine BG, bitmap BG, windows, mosaic, or GBA alpha/brightness effects.
 - Real sprites are cropped from the composited OBJ layer; OAM/OBJ tile decoding
   is still a primitive, not a full per-sprite renderer.
-- Canopy cards are a green-color heuristic, not semantic understanding: they do
-  not yet separate trees from green buildings. The side-view generator is
+- Canopy cards are a foliage-color heuristic, not semantic understanding: they
+  do not yet separate trees from green buildings. The side-view generator is
   deliberately procedural (seeded by each component bbox) and keeps the GBA
   palette, but the source art is top-down; the result reads as stylized pop-up
-  sprites, not hand-painted Octopath foliage. Dense multi-tile forests still
-  need better component splitting and depth-card volume.
+  sprites, not hand-painted Octopath foliage. Multi-tile trees are handled as
+  one component, but dense forests still need better splitting and depth-card
+  volume, and the tiny source trunks can be hard to read at near-edge angles.
 - Sparse foreground layers are still skipped by default until height inference
   can tell tree canopies from buildings.
 - Profiles are opt-in (`--profile`); there is no automatic profile discovery or

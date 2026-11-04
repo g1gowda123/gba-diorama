@@ -86,7 +86,7 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 - `tools/run-mgba-diorama.sh`: desktop-GL mGBA launcher (2× scale, muted).
 - `profiles/emerald-route101.toml`: example profile matching the real Route 101
   signature (BG2 ground with automatic canopy cards, BG3 backdrop ignored,
-  BG1 billboard leaves; camera 16°/320/8°).
+  BG1 billboard leaves; camera 35°/480/8°).
 - `tests/`: 43 tests covering decode, dump round-trip, profiles, atlas
   stitching/coverage, parallax, canopy relief/cards, ground compositing, mesh,
   render, post, fallback, determinism.

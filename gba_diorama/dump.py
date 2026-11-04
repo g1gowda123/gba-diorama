@@ -333,6 +333,7 @@ def _detect_objects(image: np.ndarray, layer: LayerProfile):
         hue_max=layer.hue_max,
         saturation_min=layer.saturation_min,
         value_max=layer.value_max,
+        open_iterations=layer.open_iterations,
     )
 
 

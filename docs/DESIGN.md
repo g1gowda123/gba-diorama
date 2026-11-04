@@ -144,9 +144,12 @@ materials; a real integration will infer them.
 `relief.py` adds a generic card heuristic for tree canopies that are painted
 into the ground layer rather than living on a separate BG:
 
-- Convert the composited ground to HSV and select saturated green pixels.
-- Morphologically open the mask to break one-pixel outlines that connect
-  adjacent trees, then take 4-connected components.
+- Convert the composited ground to HSV and select foliage colors broadly
+  (`hue 55-148`, `saturation >= 0.20`, `value <= 0.95`) so the whole dark/light
+  canopy is captured, not just the bright berry-tree speckles.
+- Morphologically open the mask twice to break thin outlines/grass and split
+  adjacent trees, then take 4-connected components. The component bbox can span
+  many 8x8 tiles; detection runs on the full BG image, not per tile.
 - Extend each component through a narrow band of connected dark pixels to pick
   up the trunk/outline, without letting dark ground shadows merge neighbors.
 - Compose the canopy pixels and the actual trunk pixels without the grass gap,

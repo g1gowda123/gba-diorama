@@ -163,6 +163,19 @@ def _morph(mask: np.ndarray, *, erode: bool, iterations: int) -> np.ndarray:
     return out
 
 
+def _canopy_texture(
+    image: np.ndarray,
+    bbox: tuple[int, int, int, int],
+    mask: np.ndarray,
+    canopy_h: int,
+) -> np.ndarray:
+    x0, y0, x1, y1 = bbox
+    texture = np.zeros((y1 - y0, x1 - x0, 4), dtype=np.uint8)
+    texture[..., :3] = image[y0:y1, x0:x1, :3]
+    texture[..., 3] = (mask * 255).astype(np.uint8)
+    return texture
+
+
 def _attach_trunk(
     image: np.ndarray,
     hue: np.ndarray,
@@ -208,7 +221,7 @@ def _attach_trunk(
     rx0 = max(0, cx - half)
     rx1 = min(width, cx + half + 1)
     if search_y1 <= y1 or rx1 <= rx0:
-        return bbox, mask, None, 0
+        return bbox, mask, _canopy_texture(image, bbox, mask, y1 - y0), y1 - y0
 
     region = (slice(y1, search_y1), slice(rx0, rx1))
     # Brown/grey trunk: low hue, low-ish value, not the bright green canopy.
@@ -218,7 +231,7 @@ def _attach_trunk(
         & (value[region] < 0.62)
     )
     if not trunk.any():
-        return bbox, mask, None, 0
+        return bbox, mask, _canopy_texture(image, bbox, mask, y1 - y0), y1 - y0
 
     seen = np.zeros_like(trunk, dtype=bool)
     best: tuple[int, int, int, int] | None = None
@@ -258,7 +271,7 @@ def _attach_trunk(
                 best = (rx0 + min_x, y1 + min_y, rx0 + max_x + 1, y1 + max_y + 1)
 
     if best is None:
-        return bbox, mask, None, 0
+        return bbox, mask, _canopy_texture(image, bbox, mask, y1 - y0), y1 - y0
 
     tx0, ty0, tx1, ty1 = best
     trunk_h = ty1 - ty0
@@ -287,11 +300,11 @@ def detect_canopies(
     image: np.ndarray,
     *,
     min_area: int = 48,
-    hue_min: float = 90.0,
-    hue_max: float = 140.0,
-    saturation_min: float = 0.35,
-    value_max: float = 0.80,
-    open_iterations: int = 1,
+    hue_min: float = 55.0,
+    hue_max: float = 148.0,
+    saturation_min: float = 0.20,
+    value_max: float = 0.95,
+    open_iterations: int = 2,
 ) -> list[CanopyComponent]:
     """Find saturated green blobs that look like tree/hedge canopies."""
 
@@ -543,8 +556,8 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     ) & 0xFFFFFFFF
     rng = np.random.default_rng(seed)
 
-    out_w = max(10, min(96, int(round(width * rng.uniform(1.45, 1.75)))))
-    crown_h = max(14, min(128, int(round(canopy_h * rng.uniform(1.55, 1.85)))))
+    out_w = max(10, min(96, int(round(width * rng.uniform(1.05, 1.25)))))
+    crown_h = max(14, min(128, int(round(canopy_h * rng.uniform(1.15, 1.35)))))
     trunk_h = max(3, int(round(max(1, height - canopy_h) * rng.uniform(0.7, 1.0))))
     out = np.zeros((crown_h + trunk_h, out_w, 4), dtype=np.uint8)
 

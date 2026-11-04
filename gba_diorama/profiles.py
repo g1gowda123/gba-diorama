@@ -155,10 +155,11 @@ class LayerProfile:
     detector: str = "green"
     min_area: int = 48
     min_alpha: int = 8
-    hue_min: float = 90.0
-    hue_max: float = 140.0
-    saturation_min: float = 0.35
-    value_max: float = 0.80
+    hue_min: float = 55.0
+    hue_max: float = 148.0
+    saturation_min: float = 0.20
+    value_max: float = 0.95
+    open_iterations: int = 2
 
     @property
     def is_ground(self) -> bool:
@@ -284,10 +285,11 @@ def _layer_from_dict(data: dict[str, Any], source: str) -> LayerProfile:
         detector=detector,
         min_area=_parse_int(data.get("min_area", 48)),
         min_alpha=_parse_int(data.get("min_alpha", 8)),
-        hue_min=float(data.get("hue_min", 90.0)),
-        hue_max=float(data.get("hue_max", 140.0)),
-        saturation_min=float(data.get("saturation_min", 0.35)),
-        value_max=float(data.get("value_max", 0.80)),
+        hue_min=float(data.get("hue_min", 55.0)),
+        hue_max=float(data.get("hue_max", 148.0)),
+        saturation_min=float(data.get("saturation_min", 0.20)),
+        value_max=float(data.get("value_max", 0.95)),
+        open_iterations=int(data.get("open_iterations", 2)),
     )
 
 
