@@ -35,8 +35,11 @@ def test_canopy_field_has_volume_and_removes_tree_from_ground():
     assert field.present.any()
     assert field.heights.max() > field.heights.min()
     # The tree art is moved into the cutout texture; the ground is filled
-    # with surrounding grass so the raised canopy does not get drawn twice.
-    assert tuple(field.ground[16, 16, :3]) == (112, 192, 160)
+    # with darkened surrounding grass so the raised canopy does not get drawn
+    # twice and the footprint reads as undergrowth instead of a bright hole.
+    assert field.ground[16, 16, 0] < 112
+    assert field.ground[16, 16, 1] < 192
+    assert field.ground[16, 16, 3] == 255
     assert field.texture[16, 16, 3] == 255
     assert field.texture[0, 0, 3] == 0
 
@@ -120,5 +123,8 @@ def test_side_view_card_keeps_a_multi_tile_tree_as_one_component():
     assert component.bbox[3] - component.bbox[1] >= 48
     card = make_side_view_card(component)
     assert card is not None
-    assert card.shape[1] > 48
+    # The card must not spill past its source footprint, otherwise adjacent
+    # trees overlap and the cleared ground shows through.
+    assert card.shape[1] <= (component.bbox[2] - component.bbox[0]) + 2
+    assert card.shape[1] >= 44
     assert card.shape[0] > 48

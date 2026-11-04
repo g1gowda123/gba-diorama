@@ -632,7 +632,10 @@ def _add_prebuilt_cards(
         card_width = width * scale
         card_height = height * scale
         cx = (x0 + x1) * 0.5 * scale
-        cz = (y0 + y1) * 0.5 * scale
+        # Stand the card at the front edge of its source footprint.  The
+        # cleared ground lies behind it, so it does not read as an empty patch
+        # in front of the tree.
+        cz = (y1 - 1) * scale
         base = np.array([cx, world.ground_height(cx, cz), cz], dtype=np.float32)
         # A small forward lean keeps the card from looking pasted onto the map.
         base = base + camera.forward * (card_height * 0.03)

@@ -24,8 +24,11 @@ on a tilted plinth. It also detects foliage-colored canopy regions in BG2,
 separates touching trees with a morphological opening, and builds each tree
 into a side-view card from the game's own pixels: a seeded procedural RNG
 varies the crown proportions and overlapping lobes, and the actual trunk art is
-scaled at the base. No synthetic trunk, sprite atlas, or hand-placed tree is
-used. Sparse BG1 leaves use the same card treatment. `--all-layers` shows the
+scaled at the base. Cards are capped to their source footprint and stood at the
+front edge of it, so adjacent trees do not overlap and the cleared ground sits
+behind the card instead of in front. The cleared footprint is darkened into
+undergrowth. No synthetic trunk, sprite atlas, or hand-placed tree is used.
+Sparse BG1 leaves use the same card treatment. `--all-layers` shows the
 unprofiled version. Both the BG and OBJ FBOs are top-down. The cards are a
 stylized 3D2D approximation: the source art is top-down, so the result reads as
 a procedural pop-up sprite rather than a hand-drawn side-view tree.
@@ -200,7 +203,7 @@ sparse-overlay skip.
   to write layer PNGs from a dump.
 - Real mGBA dump rendering: content-based ground selection, non-square world
   extents, and OBJ-layer sprites cropped from OAM entries.
-- Canopy cards from BG2/BG1: saturated-green component detection, morphological
+- Canopy cards from BG2/BG1: foliage-color component detection, morphological
   splitting of touching trees, procedural multi-lobe side-view generation from
   actual canopy pixels, actual-trunk scaling, ground fill-under, and contact
   shadows.

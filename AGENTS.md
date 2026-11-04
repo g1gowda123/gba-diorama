@@ -54,8 +54,8 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   and provides a `DumpWorld` adapter. Ground selection scores BG1–BG3 by alpha
   coverage × tile variety, extrudes only layers in front of the ground, and
   crops visible OAM entries from the composited OBJ layer. It also runs
-  `relief.py` on the composited ground to cut saturated-green canopies into
-  upright cards and fill the ground underneath. Billboard profile layers use
+  `relief.py` on the composited ground to cut foliage-colored canopies into
+  upright cards and fill the ground underneath with darkened undergrowth. Billboard profile layers use
   the same card path. An explicit `SceneProfile` can override the ground, layer
   roles, heights, and materials.
 - `profiles.py`: `SceneSignature`, `ProfileMatch`, `LayerProfile`,
@@ -71,6 +71,7 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
   component boxes for shadows.
 - `mesh.py`: greedy heightfield top faces, per-cell side walls, two-tier plinth,
   procedural side-view canopy cards generated from actual canopy/trunk pixels,
+  capped to their source footprint and based at its front edge,
   sprite billboards + shadows; non-square maps keep square pixels.
 - `raster.py`: CPU z-buffer rasterizer with clipping, perspective UV, alpha
   test/blend, fog.

@@ -155,9 +155,11 @@ into the ground layer rather than living on a separate BG:
 - Compose the canopy pixels and the actual trunk pixels without the grass gap,
   so the card keeps the game's own tree colors and proportions.
 - Build a cutout texture from the component pixels and fill the corresponding
-  ground pixels from a bright ring of surrounding grass, so the tree is not
-  drawn twice and the fill does not leave a flat teal rectangle.
-- Stand each component up as a camera-facing side-view card. A deterministic
+  ground pixels from a ring of surrounding grass, darkened into undergrowth, so
+  the tree is not drawn twice and the fill does not leave a bright hole.
+- Stand each component up as a camera-facing side-view card, capped to the
+  source bbox width and placed at the front edge of its footprint so the
+  cleared ground lies behind it. A deterministic
   RNG seeded by the component bbox varies the crown proportions and the number,
   placement, scale, and mirroring of a central mass plus 3-5 satellite lobes. All opaque pixels
   still come from the source canopy/trunk art; there is no sprite atlas or

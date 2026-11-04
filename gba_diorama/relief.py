@@ -137,7 +137,10 @@ def _inpaint_ring(
         # Blend the local median with ring samples: a pure random fill turns
         # into bright confetti, while a pure median becomes a flat teal block.
         base = np.median(pixels, axis=0)
-        out[fill, :3] = (0.55 * base + 0.45 * pixels[picks]).astype(np.uint8)
+        # Darken the cleared footprint into undergrowth/shadow.  A bright
+        # grass fill reads as an empty hole once the canopy is lifted.
+        fill_rgb = 0.45 * base + 0.55 * pixels[picks]
+        out[fill, :3] = np.clip(fill_rgb * 0.72, 0, 255).astype(np.uint8)
         out[fill, 3] = 255
     return out
 
@@ -556,8 +559,10 @@ def make_side_view_card(component: CanopyComponent) -> np.ndarray | None:
     ) & 0xFFFFFFFF
     rng = np.random.default_rng(seed)
 
-    out_w = max(10, min(96, int(round(width * rng.uniform(1.05, 1.25)))))
-    crown_h = max(14, min(128, int(round(canopy_h * rng.uniform(1.15, 1.35)))))
+    # Keep the card inside the source footprint.  Oversizing the crown made
+    # adjacent cards overlap and left the cleared footprint visible.
+    out_w = max(10, min(96, int(round(width * rng.uniform(0.92, 1.02)))))
+    crown_h = max(14, min(128, int(round(canopy_h * rng.uniform(0.95, 1.10)))))
     trunk_h = max(3, int(round(max(1, height - canopy_h) * rng.uniform(0.7, 1.0))))
     out = np.zeros((crown_h + trunk_h, out_w, 4), dtype=np.uint8)
 
