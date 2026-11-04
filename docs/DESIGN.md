@@ -155,8 +155,9 @@ into the ground layer rather than living on a separate BG:
 - Compose the canopy pixels and the actual trunk pixels without the grass gap,
   so the card keeps the game's own tree colors and proportions.
 - Build a cutout texture from the component pixels and fill the corresponding
-  ground pixels from a ring of surrounding grass, darkened into undergrowth, so
-  the tree is not drawn twice and the fill does not leave a bright hole.
+  ground pixels with small patches of the surrounding ground texture, lightly
+  shaded, so the tree is not drawn twice and the fill keeps the map's grass,
+  path, and palette instead of leaving a flat glowing hole.
 - Stand each component up as a camera-facing billboard of the authored cutout,
   capped to the source bbox width and placed at the front edge of its footprint
   so the cleared ground lies behind it. Render depth slices per tree (a darker,
