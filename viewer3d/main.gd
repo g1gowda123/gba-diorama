@@ -257,6 +257,18 @@ func _add_wall(st: SurfaceTool, x: int, z: int, nx: int, nz: int, nh: float, h: 
 	st.set_uv(uv); st.add_vertex(quad[3])
 
 
+func _max_base_height(x0: float, z0: float, x1: float, z1: float) -> float:
+	var cx0 := clampi(int(floor(x0)), 0, map_w - 1)
+	var cx1 := clampi(int(ceil(x1)), 0, map_w - 1)
+	var cz0 := clampi(int(floor(z0)) - 1, 0, map_h - 1)
+	var cz1 := clampi(int(ceil(z1)) + 1, 0, map_h - 1)
+	var highest := -10.0
+	for z in range(cz0, cz1 + 1):
+		for x in range(cx0, cx1 + 1):
+			highest = max(highest, _cell_height(x, z))
+	return highest if highest > -10.0 else 0.0
+
+
 func _build_objects() -> void:
 	var objects: Array = data.get("objects", [])
 	for obj in objects:
@@ -270,9 +282,13 @@ func _build_objects() -> void:
 			continue
 		var cx := (float(bbox[0]) + float(bbox[2])) * 0.5 / 16.0
 		var cz := float(bbox[3]) / 16.0
-		var cell_x := clampi(int(floor(cx)), 0, map_w - 1)
-		var cell_z := clampi(int(floor(cz)) - 1, 0, map_h - 1)
-		var base_y := _cell_height(cell_x, cell_z)
+		# Use the highest ground around the footprint.  A tree on a border
+		# cell whose own elevation is 0 would otherwise sink behind the
+		# neighbouring raised ground and lose its bottom half.
+		var base_y := _max_base_height(
+			float(bbox[0]) / 16.0, float(bbox[1]) / 16.0,
+			float(bbox[2]) / 16.0, float(bbox[3]) / 16.0
+		)
 		_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
 		_add_contact_shadow(Vector3(cx, base_y + 0.02, cz - 0.12), w * 0.95, w * 0.55)
 
@@ -288,9 +304,7 @@ func _build_sprites() -> void:
 		var world: Array = spr["world"]
 		var cx := (float(world[0]) + float(texture.get_width()) * 0.5) / 16.0
 		var cz := (float(world[1]) + float(texture.get_height())) / 16.0
-		var cell_x := clampi(int(floor(cx)), 0, map_w - 1)
-		var cell_z := clampi(int(floor(cz)) - 1, 0, map_h - 1)
-		var base_y := _cell_height(cell_x, cell_z)
+		var base_y := _max_base_height(cx - w * 0.5, cz - h, cx + w * 0.5, cz)
 		_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
 		_add_contact_shadow(Vector3(cx, base_y + 0.02, cz - 0.08), w * 0.8, w * 0.42)
 
@@ -337,26 +351,22 @@ func _add_contact_shadow(pos: Vector3, w: float, h: float) -> void:
 func _setup_camera() -> void:
 	var center := Vector3(map_w * 0.5, 0.35, map_h * 0.5)
 	var yaw := deg_to_rad(16.0)
-	var pitch := deg_to_rad(17.0)
-	var distance: float = max(float(map_w), float(map_h)) * 0.65
+	var pitch := deg_to_rad(24.0)
 	var camera := Camera3D.new()
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = max(float(map_w), float(map_h)) * 1.35
 	camera.position = center + Vector3(
-		sin(yaw) * cos(pitch) * distance,
-		sin(pitch) * distance,
-		cos(yaw) * cos(pitch) * distance
-	)
+		sin(yaw) * cos(pitch),
+		sin(pitch),
+		cos(yaw) * cos(pitch)
+	) * 30.0
 	add_child(camera)
 	camera.look_at(center, Vector3.UP)
-	camera.fov = 38.0
 	camera.near = 0.1
 	camera.far = 240.0
 	var attributes := CameraAttributesPractical.new()
-	attributes.dof_blur_far_enabled = true
-	attributes.dof_blur_far_distance = 24.0
-	attributes.dof_blur_far_transition = 16.0
-	attributes.dof_blur_near_enabled = true
-	attributes.dof_blur_near_distance = 4.0
-	attributes.dof_blur_near_transition = 2.5
+	attributes.dof_blur_far_enabled = false
+	attributes.dof_blur_near_enabled = false
 	camera.attributes = attributes
 	camera.current = true
 

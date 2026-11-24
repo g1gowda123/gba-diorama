@@ -558,23 +558,55 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
         return
     rgb = ground[..., :3].astype(np.uint32)
     keys = (rgb[..., 0] << 16) | (rgb[..., 1] << 8) | rgb[..., 2]
-    ground_keys = np.unique(keys[ground[..., 3] > 0])
-    if ground_keys.size == 0:
+    global_ground_keys = np.unique(keys[ground[..., 3] > 0])
+    if global_ground_keys.size == 0:
         return
 
     for obj in objects:
         texture = obj.texture
         height, width = texture.shape[:2]
+        # Use the ground directly under this object, not every ground type on
+        # the map: a brown trunk on grass would otherwise be keyed out by a
+        # dirt path's palette elsewhere.
+        fx0, fy0, fx1, fy1 = obj.footprint
+        reference = ground[fy0:fy1, fx0:fx1]
+        if reference.size:
+            ref_rgb = reference[..., :3].astype(np.uint32)
+            ref_keys = (ref_rgb[..., 0] << 16) | (ref_rgb[..., 1] << 8) | ref_rgb[..., 2]
+            ground_keys = np.unique(ref_keys[reference[..., 3] > 0])
+        else:
+            ground_keys = global_ground_keys
+        if ground_keys.size == 0:
+            continue
         trgb = texture[..., :3].astype(np.uint32)
         tkeys = (trgb[..., 0] << 16) | (trgb[..., 1] << 8) | trgb[..., 2]
         background = np.isin(tkeys, ground_keys) & (texture[..., 3] > 0)
+        # The dark strip at the bottom of a GBA tree is its contact shadow /
+        # trunk base, not background.  Keep pixels darker than the ground in
+        # the lower half so region-growing cannot eat the tree's feet.
+        luma = (
+            texture[..., 0].astype(np.float32) * 0.299
+            + texture[..., 1].astype(np.float32) * 0.587
+            + texture[..., 2].astype(np.float32) * 0.114
+        )
+        ground_luma = float(
+            np.mean(
+                reference[..., 0].astype(np.float32) * 0.299
+                + reference[..., 1].astype(np.float32) * 0.587
+                + reference[..., 2].astype(np.float32) * 0.114
+            )
+        )
+        dark_base = luma < (ground_luma - 12.0)
+        dark_base[: height // 2, :] = False
+        background &= ~dark_base
         passable = background | (texture[..., 3] == 0)
         visited = np.zeros((height, width), dtype=bool)
         queue: deque[tuple[int, int]] = deque()
+        # Seed from the top and sides, never the bottom edge: the bottom is
+        # where the trunk/shadow meets the ground.
         for x in range(width):
-            for y in (0, height - 1):
-                if passable[y, x]:
-                    queue.append((x, y))
+            if passable[0, x]:
+                queue.append((x, 0))
         for y in range(height):
             for x in (0, width - 1):
                 if passable[y, x]:
@@ -595,11 +627,13 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
         if visible.size == 0:
             continue
         y0, x0 = visible.min(axis=0)
-        y1, x1 = visible.max(axis=0) + 1
-        if (x0, y0, x1, y1) != (0, 0, width, height):
-            obj.texture = texture[y0:y1, x0:x1].copy()
-            bx0, by0, _, _ = obj.bbox
-            obj.bbox = (bx0 + int(x0), by0 + int(y0), bx0 + int(x1), by0 + int(y1))
+        _, x1 = visible.max(axis=0) + 1
+        # Keep the full bottom edge: the card must stay anchored at the
+        # footprint's front edge, even if the lowest pixels are shadow.
+        if (x0, y0, x1, height) != (0, 0, width, height):
+            obj.texture = texture[y0:height, x0:x1].copy()
+            bx0, by0, _, by1 = obj.bbox
+            obj.bbox = (bx0 + int(x0), by0 + int(y0), bx0 + int(x1), by1)
             obj.anchor = ((obj.bbox[0] + obj.bbox[2]) // 2, obj.bbox[3])
 
 

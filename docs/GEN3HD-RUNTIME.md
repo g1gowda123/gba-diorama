@@ -110,6 +110,10 @@ scoring of its unique metatiles.
 - The Godot viewer renders a **compiled snapshot**, not the live emulator
   window yet. The next step is a stream loop: `romdev` frame → updated
   sprites/OAM → Godot.
+- The camera is currently **orthographic and fits the whole map**, so the
+  result reads as a complete floating diorama rather than a full-bleed
+  in-game camera. A perspective gameplay camera that follows the player is
+  the next framing pass.
 - Object discovery is tuned on Route 101: repeated 2x2 tree cards, 1x1 props,
   and large rectangular buildings. Complex multi-part props and irregular
   buildings need more template classes.
