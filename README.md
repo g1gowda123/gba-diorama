@@ -10,8 +10,9 @@ An experimental **3D2D** renderer lab for GBA-era games and romhacks.
 > this README documents the legacy `gba_diorama` offline lab, kept as the
 > generic dump fallback and test oracle.
 
-The default presentation is a fixed high-angle orthographic view on a black
-void — upright cards, map-readable tiles, no free 3D camera:
+The default presentation is a fixed, slightly raised perspective view on a
+black void — upright cards, readable tiles, and enough angle for trees to keep
+their volume without becoming a free 3D scene:
 
 ![Route 101 compiled from a live Gen 3 session and rendered in Godot](docs/images/gen3hd-route101.png)
 

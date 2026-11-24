@@ -32,7 +32,7 @@ gen3hd.world
         │  world.json + ground.png + objects/*.png + sprites/*.png
         ▼
 viewer3d (Godot 4.7, Forward+)
-  fixed high-angle orthographic camera by default
+  fixed slightly raised perspective camera by default
   heightfield terrain + side walls, black void outside the map
   upright alpha-cutout cards for trees, props and buildings
   optional low 3D camera and building meshes (--camera=play, --buildings=mesh)
@@ -137,10 +137,11 @@ scoring of its unique metatiles.
 - The Godot viewer renders a **compiled snapshot**, not the live emulator
   window yet. The next step is a stream loop: `romdev` frame → updated
   sprites/OAM → Godot.
-- The default camera is a fixed high-angle orthographic view; the map sits on
-  a black void like the handheld framebuffer. `--camera=map` gives a top-down
-  inspection view; `--camera=play` is an opt-in low-angle 3D camera. The void
-  is never tiled with a background field.
+- The default camera is a fixed, slightly raised perspective view (about 32°)
+  framing the map on a black void like the handheld framebuffer. It does not
+  roam past the border. `--camera=map` gives a top-down inspection view;
+  `--camera=play` is an opt-in low-angle, player-focused camera. The void is
+  never tiled with a background field.
 - Buildings are upright cards by default, which keeps arbitrary romhack
   structures at their original edges. `--buildings=mesh` is opt-in: it splits
   a detected eave into a wall band and a pitched/flat roof. That mesh path is

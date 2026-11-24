@@ -456,20 +456,21 @@ func _setup_camera() -> void:
 	var pitch := deg_to_rad(24.0)
 	var camera := Camera3D.new()
 	if camera_mode == "classic":
-		# Black/White-era presentation: a fixed, high-angle orthographic
-		# view.  The map stays tile-readable; cards stand upright instead of
-		# being turned into a free 3D scene.
-		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-		camera.size = max(float(map_w), float(map_h)) * 1.10
+		# A slightly raised, fixed perspective: trees and cards still show
+		# their volume, but the map stays readable and the camera does not
+		# wander into the black void beyond the border.
+		camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+		camera.fov = 40.0
 		var classic_yaw := deg_to_rad(0.0)
-		var classic_pitch := deg_to_rad(60.0)
+		var classic_pitch := deg_to_rad(32.0)
+		var classic_distance: float = maxf(float(map_w), float(map_h)) * 1.55
 		camera.position = center + Vector3(
 			sin(classic_yaw) * cos(classic_pitch),
 			sin(classic_pitch),
 			cos(classic_yaw) * cos(classic_pitch)
-		) * 30.0
+		) * classic_distance
 		add_child(camera)
-		camera.look_at(center, Vector3.UP)
+		camera.look_at(center + Vector3(0.0, 0.6, 0.0), Vector3.UP)
 	elif camera_mode == "map":
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = max(float(map_w), float(map_h)) * 1.35
