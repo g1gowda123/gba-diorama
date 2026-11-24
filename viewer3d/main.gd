@@ -96,20 +96,14 @@ func _setup_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.55, 0.65, 0.85)
 	env.ambient_light_energy = 0.8
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.2
-	env.glow_enabled = true
-	env.glow_intensity = 0.38
-	env.glow_bloom = 0.12
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.08, 0.12, 0.18)
-	env.fog_density = 0.006
-	env.ssao_enabled = true
-	env.ssao_radius = 0.9
-	env.ssao_intensity = 1.2
-	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.05
-	env.adjustment_saturation = 1.12
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	env.tonemap_exposure = 1.0
+	env.glow_enabled = false
+	env.glow_intensity = 0.0
+	env.glow_bloom = 0.0
+	env.fog_enabled = false
+	env.ssao_enabled = false
+	env.adjustment_enabled = false
 	var sky_material := ProceduralSkyMaterial.new()
 	sky_material.sky_top_color = Color(0.04, 0.07, 0.14)
 	sky_material.sky_horizon_color = Color(0.22, 0.30, 0.40)
@@ -181,6 +175,7 @@ func _build_terrain() -> void:
 	ground_mat.roughness = 1.0
 	ground_mat.metallic = 0.0
 	ground_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	ground_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	if debug_ground:
 		ground_mat.albedo_texture = null
 		ground_mat.albedo_color = Color(1.0, 0.0, 1.0)
@@ -209,8 +204,9 @@ func _build_terrain() -> void:
 	base.mesh = plane
 	base.position = Vector3(map_w * 0.5, -0.86, map_h * 0.5)
 	var base_mat := StandardMaterial3D.new()
-	base_mat.albedo_color = Color(0.07, 0.10, 0.08)
+	base_mat.albedo_color = Color(0.34, 0.60, 0.50)
 	base_mat.roughness = 1.0
+	base_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	base.material_override = base_mat
 	add_child(base)
 
@@ -321,6 +317,7 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, alpha_
 	mat.billboard_keep_scale = true
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.roughness = 1.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var instance := MeshInstance3D.new()
 	instance.mesh = quad
 	instance.material_override = mat

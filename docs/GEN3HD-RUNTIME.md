@@ -110,6 +110,11 @@ scoring of its unique metatiles.
 - The Godot viewer renders a **compiled snapshot**, not the live emulator
   window yet. The next step is a stream loop: `romdev` frame → updated
   sprites/OAM → Godot.
+- Colour fidelity is deliberate: the terrain and card materials are
+  **unshaded**, with linear tonemapping and glow/SSAO/fog/adjustment disabled,
+  so the ground reads the same as the baked palette. Depth comes from contact
+  shadows and geometry rather than colour grading. A future palette-aware
+  grade can add atmosphere without moving the key tile colours.
 - The camera is currently **orthographic and fits the whole map**, so the
   result reads as a complete floating diorama rather than a full-bleed
   in-game camera. A perspective gameplay camera that follows the player is
