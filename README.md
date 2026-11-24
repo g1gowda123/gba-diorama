@@ -2,6 +2,16 @@
 
 An experimental **3D2D** renderer lab for GBA-era games and romhacks.
 
+> **New primary path (2026-11-24):** `gen3hd/` + `viewer3d/` replace the
+> screen-space heuristic pipeline for Pokémon Gen 3. `gen3hd` runs the ROM in
+> `romdev`, reads live PPU/WRAM state, compiles the *whole map* from the ROM's
+> own tilesets/metatiles, and exports a semantic world that a Godot 4 renderer
+> draws as a low-angle HD-2D scene. See `docs/GEN3HD-RUNTIME.md`. The rest of
+> this README documents the legacy `gba_diorama` offline lab, kept as the
+> generic dump fallback and test oracle.
+
+![Route 101 compiled from a live Gen 3 session and rendered in Godot](docs/images/gen3hd-route101.png)
+
 The goal is not to upscale the final 240×160 frame. It is to take the GBA PPU's
 already-separated background layers, reconstruct a small 3D diorama from them,
 and composite 2D sprite art into that world — the "3D world, 2D characters"

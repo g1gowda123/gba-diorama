@@ -30,3 +30,7 @@ roms/
 *.ss1
 *.png
 !docs/images/*.png
+
+# Godot import cache
+.godot/
+viewer3d/.godot/

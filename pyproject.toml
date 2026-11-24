@@ -22,9 +22,10 @@ dev = ["pytest>=8.0"]
 [project.scripts]
 gba-diorama = "gba_diorama.__main__:main"
 gba-diorama-inspect = "gba_diorama.inspect:main"
+gen3hd = "gen3hd.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["gba_diorama*"]
+include = ["gba_diorama*", "gen3hd*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,6 +9,23 @@ still open. The next major milestone is the world atlas/parallax depth. Read
 `README.md`, `docs/DESIGN.md`, and `docs/MGBA-HANDOFF.md` before changing
 architecture.
 
+**Architecture decision (2026-11-24):** the next renderer is the data-driven
+Gen 3 world model in `docs/GEN3-WORLD-MODEL.md`, not more pixel heuristics.
+`tools/probe_gen3_state.py` proves a savestate + ROM yields the whole map grid
+(metatile/collision/elevation/behavior), full-map layers, and OAM sprites.
+Build on that path; keep the green/rectangle/atlas code only as a generic
+fallback.
+
+**Fresh implementation (2026-11-24):** `gen3hd/` is the live runtime. It uses
+the local `romdev` server (libretro mGBA) instead of a savestate or the mGBA
+dump patch: load the ROM + battery save, drive the title menu, read
+VRAM/PALETTE/OAM/IWRAM/EWRAM/IO, structurally locate the active MapLayout, and
+compile the whole map with the ROM's own tilesets. `viewer3d/` is a Godot 4.7
+Forward+ renderer for the exported `world.json`. See
+`docs/GEN3HD-RUNTIME.md`. Run `python -m gen3hd` and `pytest` from the repo
+`.venv` (`uv venv .venv && uv pip install -e '.[dev]'`); the project Python is
+not on the system path.
+
 ## Commands
 
 ```bash
@@ -111,6 +128,12 @@ Dependencies: Python 3.10+, `numpy`, `pillow`; tests use `pytest`.
 
 ## Next tasks (in order)
 
+0. **Gen 3 world model.** Promote `tools/probe_gen3_state.py` into
+   `state.py` + `gen3/` (savestate, ROM structures, structural map locator,
+   full-map layers, OAM sprites). Render the whole map with semantic terrain
+   and collision-derived objects. See `docs/GEN3-WORLD-MODEL.md`. This
+   supersedes the atlas-first plan for Pokémon Gen 3; keep the generic dump
+   path for other games and as fallback.
 1. **World atlas sequence capture.** Offline discovery, VRAM-hash
    invalidation, stitching, and parallax-to-profile height wiring are in.
    Still needed: an mGBA sequence-capture mode and validation of the
