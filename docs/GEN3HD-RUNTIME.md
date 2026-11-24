@@ -57,10 +57,15 @@ systemctl --user start romdev-mcp
     --session gen3hd-live --boot \
     --out out/gen3hd-world
 
-# render a still
+# render a still (gameplay camera)
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-world" \
-    --shot="$PWD/out/gen3hd-route101.png"
+    --shot="$PWD/out/gen3hd-route101.png" --camera=play
+
+# whole-map orthographic view
+godot --path viewer3d -- \
+    --world="$PWD/out/gen3hd-world" \
+    --shot="$PWD/out/gen3hd-route101-map.png" --camera=map
 ```
 
 Attach to an already-running session by dropping `--boot` and matching
@@ -110,15 +115,15 @@ scoring of its unique metatiles.
 - The Godot viewer renders a **compiled snapshot**, not the live emulator
   window yet. The next step is a stream loop: `romdev` frame → updated
   sprites/OAM → Godot.
+- The camera has two modes: `--camera=play` (perspective, player-focused,
+  subtle far DOF, the default) and `--camera=map` (orthographic whole-map).
+  The field plane repeats a ground tile to the far clip, so the play camera
+  never sees a floating slab edge.
 - Colour fidelity is deliberate: the terrain and card materials are
   **unshaded**, with linear tonemapping and glow/SSAO/fog/adjustment disabled,
   so the ground reads the same as the baked palette. Depth comes from contact
   shadows and geometry rather than colour grading. A future palette-aware
   grade can add atmosphere without moving the key tile colours.
-- The camera is currently **orthographic and fits the whole map**, so the
-  result reads as a complete floating diorama rather than a full-bleed
-  in-game camera. A perspective gameplay camera that follows the player is
-  the next framing pass.
 - Object discovery is tuned on Route 101: repeated 2x2 tree cards, 1x1 props,
   and large rectangular buildings. Complex multi-part props and irregular
   buildings need more template classes.

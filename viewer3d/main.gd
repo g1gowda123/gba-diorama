@@ -6,6 +6,7 @@ extends Node3D
 var world_dir := ""
 var shot_path := ""
 var debug_ground := false
+var camera_mode := "play"
 var data: Dictionary = {}
 var heights: Array = []
 var behaviors: Array = []
@@ -65,6 +66,8 @@ func _parse_args() -> void:
 			shot_path = arg.trim_prefix("--shot=")
 		elif arg == "--debug-ground":
 			debug_ground = true
+		elif arg.begins_with("--camera="):
+			camera_mode = arg.trim_prefix("--camera=")
 
 
 func _load_texture(path: String) -> ImageTexture:
@@ -197,14 +200,25 @@ func _build_terrain() -> void:
 		add_child(wall_instance)
 
 	# A wide dark plane below the map so the diorama sits in a landscape
-	# rather than a floating void.  Fog fades its edges.
+	# rather than a floating void.  The field texture repeats one 16px grass
+	# tile per world unit.
 	var base := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(map_w * 5.0, map_h * 5.0)
+	plane.size = Vector2(map_w * 40.0, map_h * 40.0)
 	base.mesh = plane
-	base.position = Vector3(map_w * 0.5, -0.86, map_h * 0.5)
+	# Sit at the lowest map level, so the border is a step rather than a slab
+	# floating in a void.  The plane extends past the far clip, so its edge is
+	# never visible from the gameplay camera.
+	base.position = Vector3(map_w * 0.5, -0.25, map_h * 0.5)
 	var base_mat := StandardMaterial3D.new()
-	base_mat.albedo_color = Color(0.34, 0.60, 0.50)
+	var field_tex := _load_texture(world_dir.path_join("field.png"))
+	if field_tex != null:
+		base_mat.albedo_texture = field_tex
+		base_mat.texture_repeat = true
+		base_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		base_mat.uv1_scale = Vector3(map_w * 40.0, map_h * 40.0, 1.0)
+	else:
+		base_mat.albedo_color = Color(0.34, 0.60, 0.50)
 	base_mat.roughness = 1.0
 	base_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	base.material_override = base_mat
@@ -286,7 +300,7 @@ func _build_objects() -> void:
 			float(bbox[2]) / 16.0, float(bbox[3]) / 16.0
 		)
 		_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
-		_add_contact_shadow(Vector3(cx, base_y + 0.02, cz - 0.12), w * 0.95, w * 0.55)
+		_add_contact_shadow(Vector3(cx, base_y + 0.02, cz + 0.06), w * 1.1, w * 0.68)
 
 
 func _build_sprites() -> void:
@@ -350,19 +364,42 @@ func _setup_camera() -> void:
 	var yaw := deg_to_rad(16.0)
 	var pitch := deg_to_rad(24.0)
 	var camera := Camera3D.new()
-	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = max(float(map_w), float(map_h)) * 1.35
-	camera.position = center + Vector3(
-		sin(yaw) * cos(pitch),
-		sin(pitch),
-		cos(yaw) * cos(pitch)
-	) * 30.0
-	add_child(camera)
-	camera.look_at(center, Vector3.UP)
+	if camera_mode == "map":
+		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+		camera.size = max(float(map_w), float(map_h)) * 1.35
+		camera.position = center + Vector3(
+			sin(yaw) * cos(pitch),
+			sin(pitch),
+			cos(yaw) * cos(pitch)
+		) * 30.0
+		add_child(camera)
+		camera.look_at(center, Vector3.UP)
+	else:
+		# Gameplay camera: a low perspective view around the player.  The map
+		# extends past the frame, so object cards are never cut by the slab edge.
+		var focus_px: Array = data.get("camera_focus", [map_w * 8, map_h * 8])
+		var fx := float(focus_px[0]) / 16.0
+		var fz := float(focus_px[1]) / 16.0
+		var fy := _cell_height(int(floor(fx)), int(floor(fz)))
+		var focus := Vector3(fx, fy + 0.35, fz)
+		var play_yaw := deg_to_rad(18.0)
+		var play_pitch := deg_to_rad(20.0)
+		var play_distance := 13.0
+		camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+		camera.fov = 40.0
+		camera.position = focus + Vector3(
+			sin(play_yaw) * cos(play_pitch),
+			sin(play_pitch),
+			cos(play_yaw) * cos(play_pitch)
+		) * play_distance
+		add_child(camera)
+		camera.look_at(focus + Vector3(0.0, 0.5, 0.0), Vector3.UP)
 	camera.near = 0.1
 	camera.far = 240.0
 	var attributes := CameraAttributesPractical.new()
-	attributes.dof_blur_far_enabled = false
+	attributes.dof_blur_far_enabled = camera_mode != "map"
+	attributes.dof_blur_far_distance = 26.0
+	attributes.dof_blur_far_transition = 14.0
 	attributes.dof_blur_near_enabled = false
 	camera.attributes = attributes
 	camera.current = true

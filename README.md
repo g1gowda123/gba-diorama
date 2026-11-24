@@ -12,6 +12,10 @@ An experimental **3D2D** renderer lab for GBA-era games and romhacks.
 
 ![Route 101 compiled from a live Gen 3 session and rendered in Godot](docs/images/gen3hd-route101.png)
 
+A whole-map orthographic view is available with `--camera=map`:
+
+![Route 101 whole-map orthographic view](docs/images/gen3hd-route101-map.png)
+
 The goal is not to upscale the final 240×160 frame. It is to take the GBA PPU's
 already-separated background layers, reconstruct a small 3D diorama from them,
 and composite 2D sprite art into that world — the "3D world, 2D characters"

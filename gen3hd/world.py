@@ -166,13 +166,28 @@ class WorldModel:
             Image.fromarray(image, "RGBA").save(root / f"bg{index}.png")
         Image.fromarray(self.composite, "RGBA").save(root / "composite.png")
         Image.fromarray(self.ground, "RGBA").save(root / "ground.png")
+        # A single 16x16 field tile extends the world beyond the map edge
+        # instead of leaving a floating slab.  Prefer the second most common
+        # walkable metatile so a very common path tile does not become the
+        # surrounding field.
+        walkable = (self.collision == 0) & (self.behaviors == 0) & (self.elevation == 3)
+        if walkable.any():
+            counts = Counter(int(v) for v in self.metatile_ids[walkable])
+            ranked = counts.most_common(2)
+            field_id = ranked[1][0] if len(ranked) > 1 else ranked[0][0]
+            places = np.argwhere(walkable & (self.metatile_ids == field_id))
+            if places.size:
+                fy, fx = places[0]
+                Image.fromarray(
+                    self.ground[fy * 16 : fy * 16 + 16, fx * 16 : fx * 16 + 16]
+                ).save(root / "field.png")
         # A soft radial contact shadow shared by every object/sprite card.
         size = 64
         yy, xx = np.mgrid[0:size, 0:size]
         radius = np.sqrt((xx - size / 2 + 0.5) ** 2 + (yy - size / 2 + 0.5) ** 2)
         alpha = np.clip(1.0 - radius / (size * 0.5), 0.0, 1.0) ** 2
         shadow = np.zeros((size, size, 4), dtype=np.uint8)
-        shadow[..., 3] = (alpha * 170).astype(np.uint8)
+        shadow[..., 3] = (alpha * 220).astype(np.uint8)
         Image.fromarray(shadow, "RGBA").save(root / "shadow.png")
         for obj in self.objects:
             Image.fromarray(obj.texture, "RGBA").save(root / "objects" / f"{obj.asset_id}.png")
