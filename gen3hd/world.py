@@ -60,6 +60,9 @@ class WorldObject:
     elevation: int
     texture: np.ndarray
     source_cells: tuple[tuple[int, int], ...] = ()
+    eave: int = 0
+    roof_style: str = "flat"
+    depth: float = 0.0
 
     @property
     def width(self) -> int:
@@ -143,6 +146,9 @@ class WorldModel:
                     "anchor": list(obj.anchor),
                     "elevation": obj.elevation,
                     "texture": f"objects/{obj.asset_id}.png",
+                    "eave": obj.eave,
+                    "roof_style": obj.roof_style,
+                    "depth": obj.depth,
                 }
                 for obj in self.objects
             ],
@@ -501,6 +507,35 @@ def discover_objects(
     return objects, object_cells | covered
 
 
+def sanitize_elevation(elevation: np.ndarray, collision: np.ndarray) -> np.ndarray:
+    """Flatten isolated elevation spikes on walkable cells.
+
+    Some map cells carry an elevation sentinel (e.g. 15) for a door or an
+    object, which would otherwise extrude a one-cell pillar in the middle of
+    a town.  Use the median of the free neighbours when a cell is far above
+    its surroundings.
+    """
+
+    result = elevation.copy()
+    for _ in range(2):
+        source = result.copy()
+        for z in range(result.shape[0]):
+            for x in range(result.shape[1]):
+                if collision[z, x] != 0:
+                    continue
+                neighbours = []
+                for nx, nz in ((x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)):
+                    if 0 <= nx < result.shape[1] and 0 <= nz < result.shape[0]:
+                        if collision[nz, nx] == 0:
+                            neighbours.append(int(source[nz, nx]))
+                if not neighbours:
+                    continue
+                median = int(np.median(neighbours))
+                if abs(int(source[z, x]) - median) >= 4:
+                    result[z, x] = median
+    return result
+
+
 def repair_ground(
     composite: np.ndarray,
     clear_mask: np.ndarray,
@@ -652,6 +687,29 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
             obj.anchor = ((obj.bbox[0] + obj.bbox[2]) // 2, obj.bbox[3])
 
 
+def annotate_buildings(objects: list[WorldObject]) -> None:
+    """Split each building card into wall/roof bands and give it depth."""
+
+    for obj in objects:
+        if obj.kind != "building":
+            continue
+        height, width = obj.texture.shape[:2]
+        if height < 8 or width < 8:
+            continue
+        rgb = obj.texture[..., :3].astype(np.float32)
+        rows = rgb.mean(axis=1)
+        differences = np.abs(np.diff(rows, axis=0)).sum(axis=1)
+        low = int(height * 0.30)
+        high = max(low + 1, int(height * 0.65))
+        if differences.size:
+            eave = low + int(np.argmax(differences[low:high]))
+        else:
+            eave = height // 2
+        obj.eave = int(np.clip(eave, 1, height - 1))
+        obj.roof_style = "gable" if height <= 64 and width > height else "flat"
+        obj.depth = max(2.0, min(width / 16.0 * 0.75, 4.5))
+
+
 # ---------------------------------------------------------------------------
 # Sprites
 # ---------------------------------------------------------------------------
@@ -704,6 +762,9 @@ def compile_world(state: GbaSnapshot, rom: Gen3Rom) -> WorldModel:
     composed = compose_layers(state, rom, layout)
     layers = composed["layers"]
     composite = composite_layers(layers)
+    composed["elevation"] = sanitize_elevation(
+        composed["elevation"], composed["collision"]
+    )
     objects, clear_mask = discover_objects(
         composite,
         composed["metatile_ids"],
@@ -718,6 +779,7 @@ def compile_world(state: GbaSnapshot, rom: Gen3Rom) -> WorldModel:
         composed["metatile_ids"],
     )
     refine_object_alpha(objects, ground)
+    annotate_buildings(objects)
     palette = decode_palette(state.palette)
     oam = decode_oam(state.vram, state.oam, palette, state.io)
     sprites, player = build_sprites(state, oam, layout.width * 16, layout.height * 16)

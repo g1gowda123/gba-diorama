@@ -6,7 +6,13 @@ import pytest
 from gen3hd.gba import decode_palette
 from gen3hd.gen3.locate import find_backup_layout, find_map_layout
 from gen3hd.gen3.rom import GBA_ROM_BASE, GameFamily, Gen3Rom
-from gen3hd.world import discover_objects, repair_ground
+from gen3hd.world import (
+    WorldObject,
+    annotate_buildings,
+    discover_objects,
+    repair_ground,
+    sanitize_elevation,
+)
 
 
 def _rom_with_header(code: str, size: int = 0x200) -> bytearray:
@@ -130,3 +136,39 @@ def test_three_wide_tree_absorbs_fragment() -> None:
     trees = [obj for obj in objects if obj.kind == "tree"]
     assert len(trees) == 1
     assert trees[0].bbox == (32, 32, 80, 64)
+
+
+def test_sanitize_elevation_flattens_isolated_spike() -> None:
+    elevation = np.full((5, 5), 3, dtype=np.uint8)
+    elevation[2, 2] = 15
+    collision = np.zeros((5, 5), dtype=np.uint8)
+    cleaned = sanitize_elevation(elevation, collision)
+    assert int(cleaned[2, 2]) == 3
+    assert int(cleaned[0, 0]) == 3
+
+
+def _building_texture(w: int, h: int, eave: int) -> np.ndarray:
+    texture = np.zeros((h, w, 4), dtype=np.uint8)
+    texture[..., 3] = 255
+    texture[:eave, :, :3] = (190, 100, 60)   # roof band
+    texture[eave:, :, :3] = (220, 210, 180)  # wall band
+    return texture
+
+
+def test_annotate_buildings_finds_eave_and_roof_style() -> None:
+    small = WorldObject(
+        asset_id="house", kind="building", bbox=(0, 0, 96, 64),
+        footprint=(0, 0, 96, 64), anchor=(48, 64),
+        elevation=3, texture=_building_texture(96, 64, 39),
+    )
+    large = WorldObject(
+        asset_id="lab", kind="building", bbox=(0, 0, 112, 80),
+        footprint=(0, 0, 112, 80), anchor=(56, 80),
+        elevation=3, texture=_building_texture(112, 80, 32),
+    )
+    annotate_buildings([small, large])
+    assert 37 <= small.eave <= 40
+    assert small.roof_style == "gable"
+    assert small.depth > 2.0
+    assert large.roof_style == "flat"
+    assert large.depth > 2.0

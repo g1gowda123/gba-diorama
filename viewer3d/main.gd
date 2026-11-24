@@ -6,7 +6,9 @@ extends Node3D
 var world_dir := ""
 var shot_path := ""
 var debug_ground := false
+var shadows_enabled := true
 var camera_mode := "play"
+var focus_override := Vector2(-1.0, -1.0)
 var data: Dictionary = {}
 var heights: Array = []
 var behaviors: Array = []
@@ -66,8 +68,14 @@ func _parse_args() -> void:
 			shot_path = arg.trim_prefix("--shot=")
 		elif arg == "--debug-ground":
 			debug_ground = true
+		elif arg == "--no-shadows":
+			shadows_enabled = false
 		elif arg.begins_with("--camera="):
 			camera_mode = arg.trim_prefix("--camera=")
+		elif arg.begins_with("--focus="):
+			var parts := arg.trim_prefix("--focus=").split(",")
+			if parts.size() >= 2:
+				focus_override = Vector2(float(parts[0]), float(parts[1]))
 
 
 func _load_texture(path: String) -> ImageTexture:
@@ -299,8 +307,117 @@ func _build_objects() -> void:
 			float(bbox[0]) / 16.0, float(bbox[1]) / 16.0,
 			float(bbox[2]) / 16.0, float(bbox[3]) / 16.0
 		)
-		_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
-		_add_contact_shadow(Vector3(cx, base_y + 0.02, cz + 0.06), w * 1.1, w * 0.68)
+		if String(obj.get("kind", "")) == "building":
+			_add_building(obj, texture, w, h, cx, base_y, cz)
+		else:
+			_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
+			_add_contact_shadow(Vector3(cx, base_y + 0.02, cz + 0.06), w * 1.1, w * 0.68)
+
+
+func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: float, base_y: float, cz: float) -> void:
+	var depth := float(obj.get("depth", w * 0.6))
+	var back_z := cz - depth
+	var mid_z := cz - depth * 0.5
+	var eave := clampi(int(obj.get("eave", texture.get_height() / 2)), 1, texture.get_height() - 1)
+	var wall_h: float = maxf(0.4, float(texture.get_height() - eave) / 16.0)
+	var roof_rise := clampf(float(eave) / 16.0 * 0.55, 0.6, 1.8)
+	var roof_style := String(obj.get("roof_style", "flat"))
+
+	# Walls use only the band below the eave; the roof geometry supplies the
+	# top.  This is what stops the facade's baked roof from being stretched
+	# across a flat lid.
+	var wall_tex := AtlasTexture.new()
+	wall_tex.atlas = texture
+	wall_tex.region = Rect2i(0, eave, texture.get_width(), texture.get_height() - eave)
+	var front_mat := _card_material(wall_tex, true, Color.WHITE)
+	_add_face_quad(Vector2(w, wall_h), Vector3(cx, base_y + wall_h * 0.5 - 0.02, cz), Vector3.ZERO, front_mat)
+
+	var back_mat := StandardMaterial3D.new()
+	back_mat.albedo_color = Color(0.64, 0.58, 0.48)
+	back_mat.roughness = 1.0
+	back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	back_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_add_face_quad(Vector2(w, wall_h), Vector3(cx, base_y + wall_h * 0.5 - 0.02, back_z), Vector3.ZERO, back_mat)
+
+	var side_left_tex := AtlasTexture.new()
+	side_left_tex.atlas = texture
+	side_left_tex.region = Rect2i(0, eave, 16, texture.get_height() - eave)
+	var side_right_tex := AtlasTexture.new()
+	side_right_tex.atlas = texture
+	side_right_tex.region = Rect2i(texture.get_width() - 16, eave, 16, texture.get_height() - eave)
+	var side_left_mat := _card_material(side_left_tex, true, Color(0.94, 0.92, 0.88))
+	var side_right_mat := _card_material(side_right_tex, true, Color(0.94, 0.92, 0.88))
+	_add_face_quad(Vector2(depth, wall_h), Vector3(cx - w * 0.5, base_y + wall_h * 0.5 - 0.02, mid_z), Vector3(0, 90, 0), side_left_mat)
+	_add_face_quad(Vector2(depth, wall_h), Vector3(cx + w * 0.5, base_y + wall_h * 0.5 - 0.02, mid_z), Vector3(0, 90, 0), side_right_mat)
+
+	var roof_tex := AtlasTexture.new()
+	roof_tex.atlas = texture
+	roof_tex.region = Rect2i(0, 0, texture.get_width(), eave)
+	var roof_mat := _card_material(roof_tex, true, Color.WHITE)
+	var wall_top: float = base_y + wall_h - 0.02
+	if roof_style == "gable":
+		# Ridge runs along X at the middle of the footprint.
+		var half := depth * 0.5
+		var slope := sqrt(half * half + roof_rise * roof_rise)
+		var angle := rad_to_deg(atan2(roof_rise, half))
+		_add_face_quad(
+			Vector2(w, slope),
+			Vector3(cx, wall_top + roof_rise * 0.5, mid_z + half * 0.5),
+			Vector3(-angle, 0, 0), roof_mat
+		)
+		_add_face_quad(
+			Vector2(w, slope),
+			Vector3(cx, wall_top + roof_rise * 0.5, mid_z - half * 0.5),
+			Vector3(angle, 0, 0), roof_mat
+		)
+		_add_gable_end(cx - w * 0.5, cz, back_z, mid_z, wall_top, wall_top + roof_rise, side_left_mat)
+		_add_gable_end(cx + w * 0.5, cz, back_z, mid_z, wall_top, wall_top + roof_rise, side_right_mat)
+	else:
+		_add_face_quad(
+			Vector2(w + 0.25, depth + 0.25),
+			Vector3(cx, wall_top + 0.02, mid_z),
+			Vector3(-90, 0, 0), roof_mat
+		)
+	_add_contact_shadow(Vector3(cx, base_y + 0.02, mid_z), w * 1.25, depth * 1.15)
+
+
+func _add_gable_end(x: float, front_z: float, back_z: float, mid_z: float, wall_top: float, ridge_y: float, material: Material) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	st.set_uv(Vector2(0.0, 0.0)); st.add_vertex(Vector3(x, wall_top, front_z))
+	st.set_uv(Vector2(1.0, 0.0)); st.add_vertex(Vector3(x, wall_top, back_z))
+	st.set_uv(Vector2(0.5, 1.0)); st.add_vertex(Vector3(x, ridge_y, mid_z))
+	var instance := MeshInstance3D.new()
+	instance.mesh = st.commit()
+	instance.material_override = material
+	add_child(instance)
+
+
+func _card_material(texture: Texture2D, alpha: bool, tint: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = texture
+	mat.albedo_color = tint
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	if alpha:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		mat.alpha_scissor_threshold = 0.5
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 1.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return mat
+
+
+func _add_face_quad(size: Vector2, pos: Vector3, rot_degrees: Vector3, material: Material) -> void:
+	var quad := QuadMesh.new()
+	quad.size = size
+	var instance := MeshInstance3D.new()
+	instance.mesh = quad
+	instance.material_override = material
+	instance.position = pos
+	instance.rotation_degrees = rot_degrees
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	add_child(instance)
 
 
 func _build_sprites() -> void:
@@ -341,7 +458,7 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, alpha_
 
 
 func _add_contact_shadow(pos: Vector3, w: float, h: float) -> void:
-	if shadow_tex == null:
+	if shadow_tex == null or not shadows_enabled:
 		return
 	var quad := QuadMesh.new()
 	quad.size = Vector2(w, h)
@@ -380,6 +497,9 @@ func _setup_camera() -> void:
 		var focus_px: Array = data.get("camera_focus", [map_w * 8, map_h * 8])
 		var fx := float(focus_px[0]) / 16.0
 		var fz := float(focus_px[1]) / 16.0
+		if focus_override.x >= 0.0:
+			fx = focus_override.x
+			fz = focus_override.y
 		var fy := _cell_height(int(floor(fx)), int(floor(fz)))
 		var focus := Vector3(fx, fy + 0.35, fz)
 		var play_yaw := deg_to_rad(18.0)

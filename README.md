@@ -16,6 +16,11 @@ A whole-map orthographic view is available with `--camera=map`:
 
 ![Route 101 whole-map orthographic view](docs/images/gen3hd-route101-map.png)
 
+The same pipeline compiles Littleroot Town and turns its houses into walls with
+pitched roofs instead of billboards:
+
+![Littleroot Town houses compiled into 3D](docs/images/gen3hd-littleroot.png)
+
 The goal is not to upscale the final 240×160 frame. It is to take the GBA PPU's
 already-separated background layers, reconstruct a small 3D diorama from them,
 and composite 2D sprite art into that world — the "3D world, 2D characters"

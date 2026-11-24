@@ -111,6 +111,12 @@ class RomdevHost:
     def screenshot(self, path: str | Path) -> dict:
         return self.call("frame", op="screenshot", path=str(Path(path).resolve()))
 
+    def save_state(self, path: str | Path) -> dict:
+        return self.call("state", op="save", path=str(Path(path).resolve()))
+
+    def load_state(self, path: str | Path) -> dict:
+        return self.call("state", op="load", path=str(Path(path).resolve()))
+
     # -- memory ------------------------------------------------------------
 
     def read_region(self, region: str, length: int | None = None, offset: int = 0) -> bytes:

@@ -1,7 +1,7 @@
 # gen3hd runtime — live, data-driven HD-2D for Gen 3
 
-**Status:** first vertical slice working. Route 101 compiles from a live
-`romdev` session and renders in Godot 4.
+**Status:** first vertical slice working. Route 101 and Littleroot Town
+compile from a live `romdev` session and render in Godot 4.
 
 This is the fresh path. It replaces the old `gba_diorama` screen-space
 pipeline (green HSV masks, rectangle detection, atlas stitching, CPU
@@ -34,7 +34,8 @@ gen3hd.world
 viewer3d (Godot 4.7, Forward+)
   heightfield terrain + side walls
   alpha-cutout object cards + contact shadows
-  sky, sun/fill light, fog, SSAO, glow, DOF, vignette
+  buildings: wall band + pitched/flat roof meshes
+  unshaded palette-true materials, far DOF, vignette
 ```
 
 No savestate and no mGBA patch are required. `romdev` runs the cartridge and
@@ -66,7 +67,21 @@ godot --path viewer3d -- \
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-world" \
     --shot="$PWD/out/gen3hd-route101-map.png" --camera=map
+
+# town capture (boots Route 101, walks south, saves a reusable state)
+.venv/bin/python tools/littleroot_capture.py \
+    --rom "Pokemon - Emerald Version (USA, Europe).gba" \
+    --save roms/emerald-test/emerald.sav \
+    --out out/gen3hd-littleroot --state out/littleroot.ss1
+
+# frame the houses directly
+godot --path viewer3d -- \
+    --world="$PWD/out/gen3hd-littleroot" \
+    --shot="$PWD/out/littleroot-houses.png" \
+    --camera=play --focus=7,7
 ```
+
+Add `--no-shadows` to the viewer for geometry-only debugging.
 
 Attach to an already-running session by dropping `--boot` and matching
 `--session`.
@@ -124,11 +139,15 @@ scoring of its unique metatiles.
   so the ground reads the same as the baked palette. Depth comes from contact
   shadows and geometry rather than colour grading. A future palette-aware
   grade can add atmosphere without moving the key tile colours.
-- Object discovery is tuned on Route 101: repeated 2x2 tree cards, 1x1 props,
-  and large rectangular buildings. Complex multi-part props and irregular
-  buildings need more template classes.
-- Buildings are detected but not yet meshed as walls + gable roofs in the
-  Godot viewer; they currently render as cards.
+- Object discovery is tuned on Route 101 and Littleroot: repeated 2x2 tree
+  cards, 1x1 props, and large rectangular buildings. Complex multi-part props
+  and irregular buildings need more template classes.
+- Buildings are split at a detected eave into a textured wall band and a roof
+  band, then extruded into walls plus a gable or flat roof. Roof style is a
+  size heuristic (small wide cards get gables, larger ones flat roofs); the
+  lab and irregular buildings need explicit roof types.
+- Isolated elevation sentinels (often 15) are flattened to the neighbouring
+  median. Bridges spanning different elevations should be exempted.
 - Ledges are flattened rather than extruded as steps.
 - Sprites use OAM screen position + BG2 scroll. Parsing `gObjectEvents` would
   give authoritative world coordinates and animation state.
