@@ -24,7 +24,12 @@ The same pipeline compiles Littleroot Town. Buildings stay exact 2D cards by
 default, so arbitrary romhack structures keep their original edges; `--buildings=mesh`
 is an opt-in for known house-shaped structures:
 
-![Littleroot Town compiled in the fixed top-down view](docs/images/gen3hd-littleroot.png)
+![Littleroot Town compiled in the fixed raised-perspective view](docs/images/gen3hd-littleroot.png)
+
+When the player is behind a tree or building, a dithered silhouette is drawn
+through the occluder (`T` toggles it; `--no-dither` disables it):
+
+![Player-behind-object dither comparison](docs/images/gen3hd-dither.png)
 
 The goal is not to upscale the final 240×160 frame. It is to take the GBA PPU's
 already-separated background layers, reconstruct a small 3D diorama from them,

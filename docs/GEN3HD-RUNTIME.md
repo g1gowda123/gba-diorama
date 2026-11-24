@@ -132,6 +132,20 @@ scoring of its unique metatiles.
 - **RPG Maker XP / Pokémon Essentials / Godot / Unity fangames**: not GBA
   ROMs. They need a separate importer; this runtime cannot boot them.
 
+## Player-behind-object dither
+
+When the player card is behind a nearer tree/building card, the viewer draws a
+screen-door dither ghost of the player over the occluder, with a one-texel dark
+rim. It is toggleable:
+
+- `T` in the running viewer toggles the effect.
+- `--no-dither` starts with it off.
+- `--force-dither` forces the ghost on for stills.
+
+Occlusion is a screen-space test against card rectangles; transparent gaps in a
+card can still trigger it. It is intentionally limited to the player sprite for
+now.
+
 ## Current limitations
 
 - The Godot viewer renders a **compiled snapshot**, not the live emulator

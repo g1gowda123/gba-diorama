@@ -1,6 +1,6 @@
 extends Node3D
-## Loads a gen3hd world directory and renders it as a low-angle 3D diorama.
-## Usage:
+## Loads a gen3hd world directory and renders it as a fixed raised-perspective
+## diorama. Usage:
 ##   godot --path viewer3d -- --world=/abs/out/gen3hd-world --shot=/abs/shot.png
 
 var world_dir := ""
@@ -10,6 +10,8 @@ var shadows_enabled := true
 var dof_enabled := false
 var camera_mode := "classic"
 var building_mode := "card"
+var dither_enabled := true
+var force_dither := false
 var focus_override := Vector2(-1.0, -1.0)
 var data: Dictionary = {}
 var heights: Array = []
@@ -18,6 +20,10 @@ var map_w := 0
 var map_h := 0
 var ground_tex: Texture2D
 var shadow_tex: Texture2D
+var camera_node: Camera3D
+var occluders: Array = []
+var player_info: Dictionary = {}
+var dither_ghost: MeshInstance3D
 
 
 func _ready() -> void:
@@ -48,6 +54,8 @@ func _ready() -> void:
 		_build_objects()
 		_build_sprites()
 	_setup_camera()
+	_create_dither_ghost()
+	_update_dither_visibility()
 	_add_vignette()
 
 	# Let the renderer draw the scene before reading the viewport.
@@ -72,6 +80,10 @@ func _parse_args() -> void:
 			debug_ground = true
 		elif arg == "--no-shadows":
 			shadows_enabled = false
+		elif arg == "--no-dither":
+			dither_enabled = false
+		elif arg == "--force-dither":
+			force_dither = true
 		elif arg == "--dof":
 			dof_enabled = true
 		elif arg.begins_with("--camera="):
@@ -284,8 +296,10 @@ func _build_objects() -> void:
 		if String(obj.get("kind", "")) == "building" and building_mode == "mesh":
 			_add_building(obj, texture, w, h, cx, base_y, cz)
 		else:
-			_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
+			var card_pos := Vector3(cx, base_y + h * 0.5 - 0.02, cz)
+			_add_billboard(texture, w, h, card_pos, 1.0)
 			_add_contact_shadow(Vector3(cx, base_y + 0.02, cz + 0.06), w * 1.1, w * 0.68)
+			occluders.append({"pos": card_pos, "size": Vector2(w, h)})
 
 
 func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: float, base_y: float, cz: float) -> void:
@@ -406,8 +420,12 @@ func _build_sprites() -> void:
 		var cx := (float(world[0]) + float(texture.get_width()) * 0.5) / 16.0
 		var cz := (float(world[1]) + float(texture.get_height())) / 16.0
 		var base_y := _max_base_height(cx - w * 0.5, cz - h, cx + w * 0.5, cz)
-		_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
+		var card_pos := Vector3(cx, base_y + h * 0.5 - 0.02, cz)
+		_add_billboard(texture, w, h, card_pos, 1.0)
 		_add_contact_shadow(Vector3(cx, base_y + 0.02, cz - 0.08), w * 0.8, w * 0.42)
+		var focus: Array = data.get("camera_focus", [])
+		if focus.size() >= 2 and int(world[0]) == int(focus[0]) and int(world[1]) == int(focus[1]):
+			player_info = {"pos": card_pos, "size": Vector2(w, h), "texture": texture}
 
 
 func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, alpha_cut: float) -> void:
@@ -463,14 +481,14 @@ func _setup_camera() -> void:
 		camera.fov = 40.0
 		var classic_yaw := deg_to_rad(0.0)
 		var classic_pitch := deg_to_rad(32.0)
-		var classic_distance: float = maxf(float(map_w), float(map_h)) * 1.55
+		var classic_distance: float = maxf(float(map_w), float(map_h)) * 1.40
 		camera.position = center + Vector3(
 			sin(classic_yaw) * cos(classic_pitch),
 			sin(classic_pitch),
 			cos(classic_yaw) * cos(classic_pitch)
 		) * classic_distance
 		add_child(camera)
-		camera.look_at(center + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+		camera.look_at(center + Vector3(0.0, 0.8, 0.0), Vector3.UP)
 	elif camera_mode == "map":
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = max(float(map_w), float(map_h)) * 1.35
@@ -513,6 +531,85 @@ func _setup_camera() -> void:
 	attributes.dof_blur_near_enabled = false
 	camera.attributes = attributes
 	camera.current = true
+	camera_node = camera
+
+
+func _create_dither_ghost() -> void:
+	if player_info.is_empty():
+		return
+	var size: Vector2 = player_info["size"]
+	var pos: Vector3 = player_info["pos"]
+	var quad := QuadMesh.new()
+	quad.size = size
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://dither.gdshader")
+	mat.set_shader_parameter("albedo_tex", player_info["texture"])
+	mat.set_shader_parameter("dither_amount", 0.5)
+	var ghost := MeshInstance3D.new()
+	ghost.mesh = quad
+	ghost.material_override = mat
+	ghost.position = pos
+	ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ghost.visible = false
+	add_child(ghost)
+	dither_ghost = ghost
+
+
+func _update_dither_visibility() -> void:
+	if dither_ghost == null:
+		return
+	if not dither_enabled:
+		dither_ghost.visible = false
+		return
+	if force_dither:
+		dither_ghost.visible = true
+		return
+	if camera_node == null or player_info.is_empty():
+		return
+	var pos: Vector3 = player_info["pos"]
+	var size: Vector2 = player_info["size"]
+	var camera_pos: Vector3 = camera_node.global_position
+	var player_distance: float = camera_pos.distance_to(pos)
+	var right := camera_node.global_transform.basis.x
+	var probe: Array[Vector3] = [
+		pos,
+		pos + Vector3.UP * size.y * 0.38,
+		pos - Vector3.UP * size.y * 0.38,
+		pos - Vector3.UP * size.y * 0.5,
+	]
+	for occluder in occluders:
+		var card_pos: Vector3 = occluder["pos"]
+		var card_size: Vector2 = occluder["size"]
+		if camera_pos.distance_to(card_pos) >= player_distance:
+			continue
+		var a := camera_node.unproject_position(
+			card_pos - right * card_size.x * 0.5 - Vector3.UP * card_size.y * 0.5
+		)
+		var b := camera_node.unproject_position(
+			card_pos + right * card_size.x * 0.5 + Vector3.UP * card_size.y * 0.5
+		)
+		var rect := Rect2(
+			Vector2(minf(a.x, b.x), minf(a.y, b.y)),
+			Vector2(absf(b.x - a.x), absf(b.y - a.y))
+		).grow(6.0)
+		for point in probe:
+			var screen_point := camera_node.unproject_position(point)
+			if rect.has_point(screen_point):
+				dither_ghost.visible = true
+				return
+	dither_ghost.visible = false
+
+
+func _process(_delta: float) -> void:
+	if dither_enabled:
+		_update_dither_visibility()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_T:
+		dither_enabled = not dither_enabled
+		_update_dither_visibility()
+		print("dither ", "on" if dither_enabled else "off")
 
 
 func _add_vignette() -> void:
