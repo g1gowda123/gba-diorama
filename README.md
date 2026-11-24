@@ -10,16 +10,20 @@ An experimental **3D2D** renderer lab for GBA-era games and romhacks.
 > this README documents the legacy `gba_diorama` offline lab, kept as the
 > generic dump fallback and test oracle.
 
+The default presentation is a fixed high-angle orthographic view on a black
+void — upright cards, map-readable tiles, no free 3D camera:
+
 ![Route 101 compiled from a live Gen 3 session and rendered in Godot](docs/images/gen3hd-route101.png)
 
 A whole-map orthographic view is available with `--camera=map`:
 
 ![Route 101 whole-map orthographic view](docs/images/gen3hd-route101-map.png)
 
-The same pipeline compiles Littleroot Town and turns its houses into walls with
-pitched roofs instead of billboards:
+The same pipeline compiles Littleroot Town. Buildings stay exact 2D cards by
+default, so arbitrary romhack structures keep their original edges; `--buildings=mesh`
+is an opt-in for known house-shaped structures:
 
-![Littleroot Town houses compiled into 3D](docs/images/gen3hd-littleroot.png)
+![Littleroot Town compiled in the fixed top-down view](docs/images/gen3hd-littleroot.png)
 
 The goal is not to upscale the final 240×160 frame. It is to take the GBA PPU's
 already-separated background layers, reconstruct a small 3D diorama from them,

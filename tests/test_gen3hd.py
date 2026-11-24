@@ -147,11 +147,15 @@ def test_sanitize_elevation_flattens_isolated_spike() -> None:
     assert int(cleaned[0, 0]) == 3
 
 
-def _building_texture(w: int, h: int, eave: int) -> np.ndarray:
+def _building_texture(w: int, h: int, eave: int, tapered: bool) -> np.ndarray:
     texture = np.zeros((h, w, 4), dtype=np.uint8)
     texture[..., 3] = 255
     texture[:eave, :, :3] = (190, 100, 60)   # roof band
     texture[eave:, :, :3] = (220, 210, 180)  # wall band
+    if tapered:
+        # Transparent corners at the top simulate a front-on gable roof.
+        texture[:8, :8, 3] = 0
+        texture[:8, -8:, 3] = 0
     return texture
 
 
@@ -159,12 +163,12 @@ def test_annotate_buildings_finds_eave_and_roof_style() -> None:
     small = WorldObject(
         asset_id="house", kind="building", bbox=(0, 0, 96, 64),
         footprint=(0, 0, 96, 64), anchor=(48, 64),
-        elevation=3, texture=_building_texture(96, 64, 39),
+        elevation=3, texture=_building_texture(96, 64, 39, tapered=True),
     )
     large = WorldObject(
         asset_id="lab", kind="building", bbox=(0, 0, 112, 80),
         footprint=(0, 0, 112, 80), anchor=(56, 80),
-        elevation=3, texture=_building_texture(112, 80, 32),
+        elevation=3, texture=_building_texture(112, 80, 32, tapered=False),
     )
     annotate_buildings([small, large])
     assert 37 <= small.eave <= 40

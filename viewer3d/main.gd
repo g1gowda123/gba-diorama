@@ -7,7 +7,9 @@ var world_dir := ""
 var shot_path := ""
 var debug_ground := false
 var shadows_enabled := true
-var camera_mode := "play"
+var dof_enabled := false
+var camera_mode := "classic"
+var building_mode := "card"
 var focus_override := Vector2(-1.0, -1.0)
 var data: Dictionary = {}
 var heights: Array = []
@@ -70,8 +72,12 @@ func _parse_args() -> void:
 			debug_ground = true
 		elif arg == "--no-shadows":
 			shadows_enabled = false
+		elif arg == "--dof":
+			dof_enabled = true
 		elif arg.begins_with("--camera="):
 			camera_mode = arg.trim_prefix("--camera=")
+		elif arg.begins_with("--buildings="):
+			building_mode = arg.trim_prefix("--buildings=")
 		elif arg.begins_with("--focus="):
 			var parts := arg.trim_prefix("--focus=").split(",")
 			if parts.size() >= 2:
@@ -102,11 +108,13 @@ func _cell_height(x: int, z: int) -> float:
 
 func _setup_environment() -> void:
 	var env := Environment.new()
+	# Outside the map is the handheld framebuffer's black void, not a tiled
+	# infinite field.
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.035, 0.055, 0.09)
+	env.background_color = Color(0.0, 0.0, 0.0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.55, 0.65, 0.85)
-	env.ambient_light_energy = 0.8
+	env.ambient_light_color = Color(0.0, 0.0, 0.0)
+	env.ambient_light_energy = 0.0
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	env.tonemap_exposure = 1.0
 	env.glow_enabled = false
@@ -115,15 +123,6 @@ func _setup_environment() -> void:
 	env.fog_enabled = false
 	env.ssao_enabled = false
 	env.adjustment_enabled = false
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.04, 0.07, 0.14)
-	sky_material.sky_horizon_color = Color(0.22, 0.30, 0.40)
-	sky_material.ground_bottom_color = Color(0.02, 0.03, 0.05)
-	sky_material.ground_horizon_color = Color(0.12, 0.17, 0.22)
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-	env.sky = sky
-	env.background_mode = Environment.BG_SKY
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -207,31 +206,6 @@ func _build_terrain() -> void:
 		wall_instance.mesh = wall_mesh
 		add_child(wall_instance)
 
-	# A wide dark plane below the map so the diorama sits in a landscape
-	# rather than a floating void.  The field texture repeats one 16px grass
-	# tile per world unit.
-	var base := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(map_w * 40.0, map_h * 40.0)
-	base.mesh = plane
-	# Sit at the lowest map level, so the border is a step rather than a slab
-	# floating in a void.  The plane extends past the far clip, so its edge is
-	# never visible from the gameplay camera.
-	base.position = Vector3(map_w * 0.5, -0.25, map_h * 0.5)
-	var base_mat := StandardMaterial3D.new()
-	var field_tex := _load_texture(world_dir.path_join("field.png"))
-	if field_tex != null:
-		base_mat.albedo_texture = field_tex
-		base_mat.texture_repeat = true
-		base_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-		base_mat.uv1_scale = Vector3(map_w * 40.0, map_h * 40.0, 1.0)
-	else:
-		base_mat.albedo_color = Color(0.34, 0.60, 0.50)
-	base_mat.roughness = 1.0
-	base_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	base.material_override = base_mat
-	add_child(base)
-
 
 func _add_quad(
 	st: SurfaceTool,
@@ -307,7 +281,7 @@ func _build_objects() -> void:
 			float(bbox[0]) / 16.0, float(bbox[1]) / 16.0,
 			float(bbox[2]) / 16.0, float(bbox[3]) / 16.0
 		)
-		if String(obj.get("kind", "")) == "building":
+		if String(obj.get("kind", "")) == "building" and building_mode == "mesh":
 			_add_building(obj, texture, w, h, cx, base_y, cz)
 		else:
 			_add_billboard(texture, w, h, Vector3(cx, base_y + h * 0.5 - 0.02, cz), 1.0)
@@ -481,7 +455,22 @@ func _setup_camera() -> void:
 	var yaw := deg_to_rad(16.0)
 	var pitch := deg_to_rad(24.0)
 	var camera := Camera3D.new()
-	if camera_mode == "map":
+	if camera_mode == "classic":
+		# Black/White-era presentation: a fixed, high-angle orthographic
+		# view.  The map stays tile-readable; cards stand upright instead of
+		# being turned into a free 3D scene.
+		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+		camera.size = max(float(map_w), float(map_h)) * 1.10
+		var classic_yaw := deg_to_rad(0.0)
+		var classic_pitch := deg_to_rad(60.0)
+		camera.position = center + Vector3(
+			sin(classic_yaw) * cos(classic_pitch),
+			sin(classic_pitch),
+			cos(classic_yaw) * cos(classic_pitch)
+		) * 30.0
+		add_child(camera)
+		camera.look_at(center, Vector3.UP)
+	elif camera_mode == "map":
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = max(float(map_w), float(map_h)) * 1.35
 		camera.position = center + Vector3(
@@ -517,7 +506,7 @@ func _setup_camera() -> void:
 	camera.near = 0.1
 	camera.far = 240.0
 	var attributes := CameraAttributesPractical.new()
-	attributes.dof_blur_far_enabled = camera_mode != "map"
+	attributes.dof_blur_far_enabled = dof_enabled and camera_mode != "map"
 	attributes.dof_blur_far_distance = 26.0
 	attributes.dof_blur_far_transition = 14.0
 	attributes.dof_blur_near_enabled = false

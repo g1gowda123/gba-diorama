@@ -172,21 +172,6 @@ class WorldModel:
             Image.fromarray(image, "RGBA").save(root / f"bg{index}.png")
         Image.fromarray(self.composite, "RGBA").save(root / "composite.png")
         Image.fromarray(self.ground, "RGBA").save(root / "ground.png")
-        # A single 16x16 field tile extends the world beyond the map edge
-        # instead of leaving a floating slab.  Prefer the second most common
-        # walkable metatile so a very common path tile does not become the
-        # surrounding field.
-        walkable = (self.collision == 0) & (self.behaviors == 0) & (self.elevation == 3)
-        if walkable.any():
-            counts = Counter(int(v) for v in self.metatile_ids[walkable])
-            ranked = counts.most_common(2)
-            field_id = ranked[1][0] if len(ranked) > 1 else ranked[0][0]
-            places = np.argwhere(walkable & (self.metatile_ids == field_id))
-            if places.size:
-                fy, fx = places[0]
-                Image.fromarray(
-                    self.ground[fy * 16 : fy * 16 + 16, fx * 16 : fx * 16 + 16]
-                ).save(root / "field.png")
         # A soft radial contact shadow shared by every object/sprite card.
         size = 64
         yy, xx = np.mgrid[0:size, 0:size]
@@ -706,7 +691,14 @@ def annotate_buildings(objects: list[WorldObject]) -> None:
         else:
             eave = height // 2
         obj.eave = int(np.clip(eave, 1, height - 1))
-        obj.roof_style = "gable" if height <= 64 and width > height else "flat"
+        # A front-on gable roof tapers toward its ridge, so its top rows are
+        # narrower than the eaves.  A flat roof keeps the full width.
+        alpha = obj.texture[..., 3] > 0
+        row_widths = alpha.sum(axis=1)
+        full_width = max(1, int(row_widths.max()))
+        top_rows = row_widths[: max(1, obj.eave // 2)]
+        top_ratio = float(top_rows[: min(4, top_rows.size)].mean()) / full_width
+        obj.roof_style = "gable" if top_ratio < 0.92 else "flat"
         obj.depth = max(2.0, min(width / 16.0 * 0.75, 4.5))
 
 

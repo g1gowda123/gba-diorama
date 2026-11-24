@@ -32,10 +32,11 @@ gen3hd.world
         │  world.json + ground.png + objects/*.png + sprites/*.png
         ▼
 viewer3d (Godot 4.7, Forward+)
-  heightfield terrain + side walls
-  alpha-cutout object cards + contact shadows
-  buildings: wall band + pitched/flat roof meshes
-  unshaded palette-true materials, far DOF, vignette
+  fixed high-angle orthographic camera by default
+  heightfield terrain + side walls, black void outside the map
+  upright alpha-cutout cards for trees, props and buildings
+  optional low 3D camera and building meshes (--camera=play, --buildings=mesh)
+  unshaded palette-true materials, vignette
 ```
 
 No savestate and no mGBA patch are required. `romdev` runs the cartridge and
@@ -58,15 +59,21 @@ systemctl --user start romdev-mcp
     --session gen3hd-live --boot \
     --out out/gen3hd-world
 
-# render a still (gameplay camera)
+# render a still (fixed high-angle, default)
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-world" \
-    --shot="$PWD/out/gen3hd-route101.png" --camera=play
+    --shot="$PWD/out/gen3hd-route101.png"
 
 # whole-map orthographic view
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-world" \
     --shot="$PWD/out/gen3hd-route101-map.png" --camera=map
+
+# optional low-angle 3D camera and meshed houses
+godot --path viewer3d -- \
+    --world="$PWD/out/gen3hd-littleroot" \
+    --shot="$PWD/out/littleroot-3d.png" \
+    --camera=play --buildings=mesh
 
 # town capture (boots Route 101, walks south, saves a reusable state)
 .venv/bin/python tools/littleroot_capture.py \
@@ -130,22 +137,18 @@ scoring of its unique metatiles.
 - The Godot viewer renders a **compiled snapshot**, not the live emulator
   window yet. The next step is a stream loop: `romdev` frame → updated
   sprites/OAM → Godot.
-- The camera has two modes: `--camera=play` (perspective, player-focused,
-  subtle far DOF, the default) and `--camera=map` (orthographic whole-map).
-  The field plane repeats a ground tile to the far clip, so the play camera
-  never sees a floating slab edge.
-- Colour fidelity is deliberate: the terrain and card materials are
-  **unshaded**, with linear tonemapping and glow/SSAO/fog/adjustment disabled,
-  so the ground reads the same as the baked palette. Depth comes from contact
-  shadows and geometry rather than colour grading. A future palette-aware
-  grade can add atmosphere without moving the key tile colours.
-- Object discovery is tuned on Route 101 and Littleroot: repeated 2x2 tree
-  cards, 1x1 props, and large rectangular buildings. Complex multi-part props
-  and irregular buildings need more template classes.
-- Buildings are split at a detected eave into a textured wall band and a roof
-  band, then extruded into walls plus a gable or flat roof. Roof style is a
-  size heuristic (small wide cards get gables, larger ones flat roofs); the
-  lab and irregular buildings need explicit roof types.
+- The default camera is a fixed high-angle orthographic view; the map sits on
+  a black void like the handheld framebuffer. `--camera=map` gives a top-down
+  inspection view; `--camera=play` is an opt-in low-angle 3D camera. The void
+  is never tiled with a background field.
+- Buildings are upright cards by default, which keeps arbitrary romhack
+  structures at their original edges. `--buildings=mesh` is opt-in: it splits
+  a detected eave into a wall band and a pitched/flat roof. That mesh path is
+  tuned for house-shaped structures, not a general building classifier.
+- Colour fidelity is deliberate: terrain and card materials are **unshaded**,
+  with linear tonemapping and glow/SSAO/fog/adjustment disabled, so the ground
+  reads the same as the baked palette. Depth comes from contact shadows and
+  the high-angle camera rather than colour grading.
 - Isolated elevation sentinels (often 15) are flattened to the neighbouring
   median. Bridges spanning different elevations should be exempted.
 - Ledges are flattened rather than extruded as steps.

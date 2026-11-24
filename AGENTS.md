@@ -21,9 +21,11 @@ the local `romdev` server (libretro mGBA) instead of a savestate or the mGBA
 dump patch: load the ROM + battery save, drive the title menu, read
 VRAM/PALETTE/OAM/IWRAM/EWRAM/IO, structurally locate the active MapLayout, and
 compile the whole map with the ROM's own tilesets. `viewer3d/` is a Godot 4.7
-Forward+ renderer for the exported `world.json`; it builds heightfield terrain,
-alpha-cutout tree/prop cards, and building wall bands with pitched or flat
-roofs. See `docs/GEN3HD-RUNTIME.md`. Run `python -m gen3hd` and `pytest` from
+Forward+ renderer for the exported `world.json`. Its default presentation is a
+fixed high-angle orthographic view on a black void, with upright alpha-cutout
+cards for trees, props and buildings; a low 3D camera and meshed house roofs
+are opt-in (`--camera=play`, `--buildings=mesh`). See
+`docs/GEN3HD-RUNTIME.md`. Run `python -m gen3hd` and `pytest` from
 the repo `.venv` (`uv venv .venv && uv pip install -e '.[dev]'`); the project
 Python is not on the system path.
 

@@ -9,8 +9,11 @@ world for the Godot viewer.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from gen3hd.gen3.rom import Gen3Rom
 from gen3hd.host import RomdevHost
