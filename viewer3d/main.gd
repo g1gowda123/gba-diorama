@@ -256,11 +256,12 @@ func _preset_for(name: String) -> Dictionary:
 			"mote_amount": 110,
 			"exposure": 1.0,
 			"shadow_strength": 1.05,
+			"vignette": 0.50,
 		},
 		"day": {
-			"bg_top": Color(0.080, 0.160, 0.280),
-			"bg_bottom": Color(0.180, 0.300, 0.420),
-			"glow": Color(0.180, 0.180, 0.180),
+			"bg_top": Color(0.120, 0.220, 0.380),
+			"bg_bottom": Color(0.220, 0.380, 0.520),
+			"glow": Color(0.150, 0.150, 0.150),
 			"glow_center": Vector2(0.50, 0.42),
 			"sun_color": Color(1.00, 0.95, 0.86),
 			"sun_energy": 1.30,
@@ -274,6 +275,7 @@ func _preset_for(name: String) -> Dictionary:
 			"mote_amount": 70,
 			"exposure": 1.0,
 			"shadow_strength": 0.45,
+			"vignette": 0.25,
 		},
 		"dusk": {
 			"bg_top": Color(0.016, 0.010, 0.026),
@@ -292,6 +294,7 @@ func _preset_for(name: String) -> Dictionary:
 			"mote_amount": 120,
 			"exposure": 1.0,
 			"shadow_strength": 1.0,
+			"vignette": 0.55,
 		},
 		"night": {
 			"bg_top": Color(0.004, 0.007, 0.016),
@@ -310,6 +313,7 @@ func _preset_for(name: String) -> Dictionary:
 			"mote_amount": 150,
 			"exposure": 1.0,
 			"shadow_strength": 0.95,
+			"vignette": 0.60,
 		},
 	}
 	var chosen: Dictionary = presets.get(name, presets["golden"])
@@ -1391,6 +1395,7 @@ func _add_vignette() -> void:
 	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var material := ShaderMaterial.new()
 	material.shader = load("res://vignette.gdshader")
+	material.set_shader_parameter("strength", preset.get("vignette", 0.5))
 	rect.material = material
 	root.add_child(rect)
 	stage.add_child(layer)
