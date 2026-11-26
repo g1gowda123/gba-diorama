@@ -1,7 +1,9 @@
 # gen3hd runtime — live, data-driven HD-2D for Gen 3
 
-**Status:** first vertical slice working. Route 101 and Littleroot Town
-compile from a live `romdev` session and render in Godot 4.
+**Status:** vertical slice working, presentation pass landed. Route 101 and
+Littleroot Town compile from a live `romdev` session and render in Godot 4 as a
+lit floating diorama — baked silhouette shadows, meshed houses, door light
+pools, a cliff cross-section, particles and a deep stage gradient.
 
 This is the fresh path. It replaces the old `gba_diorama` screen-space
 pipeline (green HSV masks, rectangle detection, atlas stitching, CPU
@@ -27,16 +29,20 @@ gen3hd.world
   full-map BG1/BG2/BG3 composition from the ROM's own tilesets
   semantic grid: metatile / collision / elevation / layer type / behaviour
   object cutouts: repeated 2x2 metatile blocks on solid cells + buildings
-  tile-aware ground repair
+  per-pixel alpha keying and ground repair
+  baked contact AO + projected silhouette shadows
   OAM sprite billboards
-        │  world.json + ground.png + objects/*.png + sprites/*.png
+        │  world.json + ground.png + composite.png + bg1/2/3.png
+        │  objects/*.png + sprites/*.png + ao.png + shadow_ground.png
         ▼
 viewer3d (Godot 4.7, Forward+)
-  fixed slightly raised perspective camera by default
-  heightfield terrain + side walls, black void outside the map
-  upright alpha-cutout cards for trees, props and buildings
-  optional low 3D camera and building meshes (--camera=play, --buildings=mesh)
-  unshaded palette-true materials, vignette
+  fixed raised perspective camera; stage gradient instead of a flat void
+  palette-true lit terrain with baked AO + cast silhouette shadows
+  upright alpha-cutout cards with sun-side rim and base contact shade
+  meshed houses by default (card mode available for arbitrary hacks)
+  earthen cliff, grass fringe, vines and floating shards
+  door light pools and warm point lights after dark
+  drifting motes; optional DOF; edge-only tilt-shift; vignette
 ```
 
 No savestate and no mGBA patch are required. `romdev` runs the cartridge and
@@ -59,21 +65,17 @@ systemctl --user start romdev-mcp
     --session gen3hd-live --boot \
     --out out/gen3hd-world
 
-# render a still (fixed high-angle, default)
+# render a still (golden hour, classic camera, no DOF)
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-world" \
-    --shot="$PWD/out/gen3hd-route101.png"
+    --shot="$PWD/out/gen3hd-route101.png" \
+    --size=1600x900 --camera=classic --no-dof
 
 # whole-map orthographic view
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-world" \
-    --shot="$PWD/out/gen3hd-route101-map.png" --camera=map
-
-# optional low-angle 3D camera and meshed houses
-godot --path viewer3d -- \
-    --world="$PWD/out/gen3hd-littleroot" \
-    --shot="$PWD/out/littleroot-3d.png" \
-    --camera=play --buildings=mesh
+    --shot="$PWD/out/gen3hd-route101-map.png" \
+    --size=1600x900 --camera=map --no-dof
 
 # town capture (boots Route 101, walks south, saves a reusable state)
 .venv/bin/python tools/littleroot_capture.py \
@@ -81,17 +83,125 @@ godot --path viewer3d -- \
     --save roms/emerald-test/emerald.sav \
     --out out/gen3hd-littleroot --state out/littleroot.ss1
 
-# frame the houses directly
+# town at dusk with meshed houses
 godot --path viewer3d -- \
     --world="$PWD/out/gen3hd-littleroot" \
-    --shot="$PWD/out/littleroot-houses.png" \
-    --camera=play --focus=7,7
-```
+    --shot="$PWD/out/littleroot.png" \
+    --size=1600x900 --camera=classic --buildings=mesh --no-dof
 
-Add `--no-shadows` to the viewer for geometry-only debugging.
+# night pass (window/door lights, cool grade, fireflies)
+godot --path viewer3d -- \
+    --world="$PWD/out/gen3hd-littleroot" \
+    --shot="$PWD/out/littleroot-night.png" \
+    --size=1600x900 --camera=classic --buildings=mesh --time=night --no-dof
+
+# re-bake AO/shadows after tuning, without a live session
+.venv/bin/python tools/rebake_presentation.py out/gen3hd-world out/gen3hd-littleroot
+
+# regenerate the README images from captured worlds
+tools/render-showcase.sh
+```
 
 Attach to an already-running session by dropping `--boot` and matching
 `--session`.
+
+### Viewer flags
+
+| Flag | Meaning |
+|---|---|
+| `--world=<dir>` | exported world directory containing `world.json` |
+| `--shot=<png>` | render one still offscreen through a SubViewport and exit |
+| `--size=WxH` | offscreen render size (stills bypass the tiled window) |
+| `--camera=classic` | whole-map raised perspective on a stage (default) |
+| `--camera=hero` | low scenic camera near the map centre |
+| `--camera=play` | low gameplay camera around the player |
+| `--camera=map` | orthographic whole-map inspection view |
+| `--buildings=mesh` | extrude detected houses (default) |
+| `--buildings=card` | keep building facades as exact cutouts |
+| `--time=golden` | golden-hour grade (default) |
+| `--time=day` | brighter grade with weaker shadows |
+| `--time=dusk` | warm sunset grade |
+| `--time=night` | cool moonlight grade with door/window light and fireflies |
+| `--no-dof` | disable the subtle far blur |
+| `--no-tilt-shift` | disable the edge-only miniature blur |
+| `--no-cliff-detail` | hide the grass fringe, vines, rocks and shards |
+| `--no-particles` | hide drifting motes |
+| `--no-shadows` | disable real-time shadows (baked ground overlays remain) |
+| `--focus=x,z` | focus override in map tiles |
+| `--pitch=`, `--yaw=`, `--distance=` | camera overrides |
+| `--letterbox` | add cinematic bars |
+| `--no-dither` / `--force-dither` | player-behind-object dither control |
+
+## Presentation system
+
+### Terrain
+
+The ground is the ROM's own composited tilemap. Two overlays are baked by
+`gen3hd.world` and sampled by `shaders/terrain.gdshader`:
+
+- `ao.png` — soft contact occlusion under every card footprint;
+- `shadow_ground.png` — the card's alpha silhouette projected along the sun
+  direction by its height, so a tree or house casts a readable shadow in the
+  map's pixel grid.
+
+The shader multiplies the authored palette by a cool shadow tint, adds a
+warm-to-cool light sweep across the map, and a very small low-frequency value
+noise break-up. A directional sun and cool camera-side fill supply real-time
+shadows for meshes; the authored albedo remains the dominant colour.
+
+### Cards
+
+Every tree, bush, flower and sprite is an upright alpha-cutout card. The card
+shader adds only:
+
+- a one-texel sun-side rim sampled from the alpha edge;
+- a horizontal sun-to-shade gradient;
+- a base contact darkening;
+- an optional tiny wind sway (interactive only; stills are static).
+
+Cards are deterministically varied in scale, tint and horizontal flip so a
+treeline does not read as one repeated stamp.
+
+### Houses
+
+`annotate_buildings()` splits each facade at the strongest row-colour break
+(the eave), detects gable versus flat roofs, and assigns depth. The viewer then
+builds:
+
+- a front facade from the authored wall band (transparent roof corners filled
+  with each row's wall colour);
+- textured side walls and a dark back wall;
+- a pitched roof from the authored roof band, with an overhang and ridge;
+- gable ends and a foundation strip;
+- a door light pool and a warm point light after dark;
+- contact and real-time shadows.
+
+Arbitrary romhack buildings still work because the eave, width, height and
+roof type come from the card texture, not from content IDs. `--buildings=card`
+is the escape hatch for structures that do not look like houses.
+
+### Floating island
+
+The map edge is a cut-away diorama, not an infinite plane:
+
+- the terrain side walls fall 1.85 units through a grass lip, soil strata and
+  dark rock;
+- a procedural grass fringe, hanging vines and embedded rocks break the cut
+  face;
+- a few detached rock shards float below the slab;
+- a soft additive pool under the island and a deep vertical stage gradient
+  replace the flat black void. The void is never tiled with a generated field.
+
+The default `classic` framing includes the whole cliff, so the island reads as
+a complete object rather than a slab cropped at the screen edge.
+
+### Post
+
+- Linear tonemapping, exposure 1.0, glow only above 1.05 so door lights and
+  motes bloom while the palette stays stable.
+- Subtle SSAO, exponential depth fog, gentle vignette.
+- Edge-only tilt-shift in the classic camera: the centre stays texel-crisp.
+- `--dof` adds a far-plane blur for the low gameplay cameras; off by default.
 
 ## Romhack and tileset support
 
@@ -151,19 +261,17 @@ now.
 - The Godot viewer renders a **compiled snapshot**, not the live emulator
   window yet. The next step is a stream loop: `romdev` frame → updated
   sprites/OAM → Godot.
-- The default camera is a fixed, slightly raised perspective view (about 32°)
-  framing the map on a black void like the handheld framebuffer. It does not
-  roam past the border. `--camera=map` gives a top-down inspection view;
-  `--camera=play` is an opt-in low-angle, player-focused camera. The void is
-  never tiled with a background field.
-- Buildings are upright cards by default, which keeps arbitrary romhack
-  structures at their original edges. `--buildings=mesh` is opt-in: it splits
-  a detected eave into a wall band and a pitched/flat roof. That mesh path is
-  tuned for house-shaped structures, not a general building classifier.
-- Colour fidelity is deliberate: terrain and card materials are **unshaded**,
-  with linear tonemapping and glow/SSAO/fog/adjustment disabled, so the ground
-  reads the same as the baked palette. Depth comes from contact shadows and
-  the high-angle camera rather than colour grading.
+- The default `classic` camera is a fixed raised perspective framing the whole
+  island and its cliff. `--camera=map` is an inspection view; `--camera=hero`
+  and `--camera=play` are scenic/gameplay cameras that crop the map.
+- Buildings default to the house mesher. `--buildings=card` keeps exact
+  cutouts for romhack structures that are not house-shaped.
+- Colour is deliberately palette-true: terrain and cards use the authored GBA
+  albedo, with lighting and shadows layered on top. There is no ACES tonemap
+  or global tint; the grade modes only change the sun/ambient/backdrop.
+- Baked silhouette shadows follow one fixed sun direction (left to right, 38°
+  elevation). Changing the sun angle would require re-baking
+  `shadow_ground.png`; `tools/rebake_presentation.py` does this from an export.
 - Isolated elevation sentinels (often 15) are flattened to the neighbouring
   median. Bridges spanning different elevations should be exempted.
 - Ledges are flattened rather than extruded as steps.

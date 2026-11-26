@@ -12,6 +12,7 @@ rectangle.  Both rules survive a romhack that replaces the tileset.
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -180,6 +181,19 @@ class WorldModel:
         shadow = np.zeros((size, size, 4), dtype=np.uint8)
         shadow[..., 3] = (alpha * 220).astype(np.uint8)
         Image.fromarray(shadow, "RGBA").save(root / "shadow.png")
+        # Baked contact occlusion around every card, sampled by the terrain
+        # shader in map space.  Real-time shadows supply direction; this keeps
+        # objects grounded from every angle without extra fill light.
+        Image.fromarray(
+            bake_ground_ao(self.objects, self.sprites, self.pixel_width, self.pixel_height),
+            "RGBA",
+        ).save(root / "ao.png")
+        Image.fromarray(
+            bake_ground_shadow(
+                self.objects, self.sprites, self.pixel_width, self.pixel_height
+            ),
+            "RGBA",
+        ).save(root / "shadow_ground.png")
         for obj in self.objects:
             Image.fromarray(obj.texture, "RGBA").save(root / "objects" / f"{obj.asset_id}.png")
         for spr in self.sprites:
@@ -670,6 +684,168 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
             bx0, by0, _, by1 = obj.bbox
             obj.bbox = (bx0 + int(x0), by0 + int(y0), bx0 + int(x1), by1)
             obj.anchor = ((obj.bbox[0] + obj.bbox[2]) // 2, obj.bbox[3])
+
+
+def _blur_mask(mask: np.ndarray, radius: int = 2) -> np.ndarray:
+    """Separable box blur for the baked occlusion map (numpy only)."""
+
+    kernel = np.ones(2 * radius + 1, dtype=np.float32) / float(2 * radius + 1)
+    out = mask
+    for axis in (0, 1):
+        pad = [(radius, radius) if index == axis else (0, 0) for index in range(2)]
+        padded = np.pad(out, pad, mode="edge")
+        out = np.apply_along_axis(
+            lambda line: np.convolve(line, kernel, mode="valid"), axis, padded
+        )
+    return out
+
+
+def bake_ground_ao(
+    objects: list[WorldObject],
+    sprites: list[SpriteBillboard],
+    pixel_width: int,
+    pixel_height: int,
+) -> np.ndarray:
+    """Bake soft contact occlusion under every card into an RGBA overlay.
+
+    The viewer multiplies the ground by this map.  It is deliberately subtle
+    and only covers the footprint base: directional shadows come from the
+    engine, while this keeps the grass under trunks, flowers and walls from
+    looking like the card is pasted on.
+    """
+
+    ao = np.zeros((pixel_height, pixel_width), dtype=np.float32)
+
+    def splat(cx: float, cy: float, rx: float, ry: float, strength: float) -> None:
+        rx = max(rx, 2.0)
+        ry = max(ry, 2.0)
+        x0 = max(0, int(cx - rx * 2.2))
+        x1 = min(pixel_width, int(cx + rx * 2.2) + 1)
+        y0 = max(0, int(cy - ry * 2.2))
+        y1 = min(pixel_height, int(cy + ry * 2.2) + 1)
+        if x0 >= x1 or y0 >= y1:
+            return
+        yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+        distance = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
+        falloff = np.clip(1.0 - distance, 0.0, 1.0) ** 1.6
+        ao[y0:y1, x0:x1] = np.maximum(ao[y0:y1, x0:x1], falloff * strength)
+
+    for obj in objects:
+        x0, y0, x1, y1 = obj.footprint
+        width = float(x1 - x0)
+        cx = (x0 + x1) * 0.5
+        base = float(y1)
+        if obj.kind == "building":
+            splat(cx, base - width * 0.04, width * 0.56, width * 0.13, 0.50)
+            splat(cx, base - float(y1 - y0) * 0.2, width * 0.46, width * 0.16, 0.22)
+        elif obj.kind == "tree":
+            splat(cx, base - width * 0.10, width * 0.34, width * 0.16, 0.40)
+        else:
+            splat(cx, base - width * 0.06, width * 0.36, width * 0.22, 0.32)
+
+    for sprite in sprites:
+        cx = float(sprite.world[0])
+        base = float(sprite.world[1])
+        splat(cx, base - 2.0, 12.0, 6.0, 0.38)
+
+    ao = _blur_mask(ao, 2)
+    out = np.zeros((pixel_height, pixel_width, 4), dtype=np.uint8)
+    out[..., 3] = np.clip(ao, 0.0, 1.0) * 255.0
+    return out
+
+
+def bake_ground_shadow(
+    objects: list[WorldObject],
+    sprites: list[SpriteBillboard],
+    pixel_width: int,
+    pixel_height: int,
+    shadow_dir: tuple[float, float] = (0.82, -0.57),
+    elevation_deg: float = 38.0,
+) -> np.ndarray:
+    """Bake the cutout cards' silhouette shadows into a ground overlay.
+
+    Engine shadow maps do not reliably include alpha-cutout billboards, and a
+    radial blob under a tree cannot read as sunlight.  For each card row we
+    take the authored alpha silhouette, project it along the sun direction by
+    its height, and accumulate a soft band.  The result is a tree-shaped
+    shadow in the map's own pixel grid, sampled by the terrain shader.
+    """
+
+    shadow = np.zeros((pixel_height, pixel_width), dtype=np.float32)
+    projection = 1.0 / max(0.05, math.tan(math.radians(elevation_deg)))
+    dir_x, dir_z = shadow_dir
+
+    def splat(cx: float, cy: float, rx: float, ry: float, value: float) -> None:
+        rx = max(rx, 0.6)
+        ry = max(ry, 0.6)
+        x0 = max(0, int(cx - rx * 2.0))
+        x1 = min(pixel_width, int(cx + rx * 2.0) + 1)
+        y0 = max(0, int(cy - ry * 2.0))
+        y1 = min(pixel_height, int(cy + ry * 2.0) + 1)
+        if x0 >= x1 or y0 >= y1:
+            return
+        yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+        distance = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
+        falloff = np.clip(1.0 - distance, 0.0, 1.0) ** 1.2
+        shadow[y0:y1, x0:x1] = np.maximum(
+            shadow[y0:y1, x0:x1], falloff * value
+        )
+
+    def project_texture(
+        texture: np.ndarray,
+        bbox_x0: int,
+        bbox_y1: int,
+        strength: float,
+    ) -> None:
+        height, width = texture.shape[:2]
+        if height == 0 or width == 0:
+            return
+        solid = texture[..., 3] > 40
+        if not solid.any():
+            return
+        height_world = height / 16.0
+        for row in range(height):
+            columns = np.where(solid[row])[0]
+            if columns.size == 0:
+                continue
+            x0 = int(columns.min())
+            x1 = int(columns.max()) + 1
+            width_world = (x1 - x0) / 16.0
+            if width_world <= 0.0:
+                continue
+            height_above_base = (1.0 - (row + 0.5) / height) * height_world
+            offset = height_above_base * projection
+            centre_x = (bbox_x0 + (x0 + x1) * 0.5) / 16.0 + dir_x * offset
+            centre_y = bbox_y1 / 16.0 + dir_z * offset
+            coverage = columns.size / float(max(1, x1 - x0))
+            value = strength * (0.45 + coverage * 0.55)
+            splat(
+                centre_x * 16.0,
+                centre_y * 16.0,
+                width_world * 8.0 * 1.06,
+                2.4,
+                value,
+            )
+
+    for obj in objects:
+        project_texture(
+            obj.texture,
+            obj.bbox[0],
+            obj.bbox[3],
+            0.82 if obj.kind == "building" else 0.84,
+        )
+
+    for sprite in sprites:
+        project_texture(
+            sprite.texture,
+            sprite.world[0],
+            sprite.world[1] + sprite.texture.shape[0],
+            0.70,
+        )
+    shadow = _blur_mask(shadow, 2)
+    out = np.zeros((pixel_height, pixel_width, 4), dtype=np.uint8)
+    out[..., 3] = np.clip(shadow, 0.0, 1.0) * 255.0
+    return out
 
 
 def annotate_buildings(objects: list[WorldObject]) -> None:

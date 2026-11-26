@@ -10,9 +10,11 @@ An experimental **3D2D** renderer lab for GBA-era games and romhacks.
 > this README documents the legacy `gba_diorama` offline lab, kept as the
 > generic dump fallback and test oracle.
 
-The default presentation is a fixed, slightly raised perspective view on a
-black void — upright cards, readable tiles, and enough angle for trees to keep
-their volume without becoming a free 3D scene:
+The default presentation is a **golden-hour floating diorama**: a fixed raised
+perspective on a deep stage gradient, palette-true terrain under a low side
+sun, baked tree/building silhouette shadows, an earthen cliff with a grass
+fringe and hanging vines, meshed houses with lit doors and window light,
+drifting motes, and a restrained tilt-shift at the frame edges:
 
 ![Route 101 compiled from a live Gen 3 session and rendered in Godot](docs/images/gen3hd-route101.png)
 
@@ -20,16 +22,33 @@ A whole-map orthographic view is available with `--camera=map`:
 
 ![Route 101 whole-map orthographic view](docs/images/gen3hd-route101-map.png)
 
-The same pipeline compiles Littleroot Town. Buildings stay exact 2D cards by
-default, so arbitrary romhack structures keep their original edges; `--buildings=mesh`
-is an opt-in for known house-shaped structures:
+The same pipeline compiles Littleroot Town. Detected house-shaped structures
+are meshed by default — walls, pitched roof, overhang, foundation and contact
+shadow — while `--buildings=card` keeps arbitrary romhack facades as exact
+cutouts. Door light pools and a warm point light make the town read at dusk:
 
 ![Littleroot Town compiled in the fixed raised-perspective view](docs/images/gen3hd-littleroot.png)
+
+The same world at night, with window and doorway light and a cooler grade:
+
+![Littleroot Town at night](docs/images/gen3hd-littleroot-night.png)
 
 When the player is behind a tree or building, a dithered silhouette is drawn
 through the occluder (`T` toggles it; `--no-dither` disables it):
 
 ![Player-behind-object dither comparison](docs/images/gen3hd-dither.png)
+
+Presentation is data-driven and deterministic:
+
+```bash
+# 1920x1080 still of a compiled world (classic camera, golden hour)
+godot --path viewer3d -- --world="$PWD/out/gen3hd-world" \
+    --shot="$PWD/out/route.png" --size=1920x1080 --camera=classic --no-dof
+
+# Camera: classic (whole-map stage), hero/play (low gameplay), map (ortho)
+# Time:   golden (default), day, dusk, night
+# Look:   --dof, --no-tilt-shift, --no-cliff-detail, --no-particles
+```
 
 The goal is not to upscale the final 240×160 frame. It is to take the GBA PPU's
 already-separated background layers, reconstruct a small 3D diorama from them,

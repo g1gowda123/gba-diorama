@@ -9,6 +9,8 @@ from gen3hd.gen3.rom import GBA_ROM_BASE, GameFamily, Gen3Rom
 from gen3hd.world import (
     WorldObject,
     annotate_buildings,
+    bake_ground_ao,
+    bake_ground_shadow,
     discover_objects,
     repair_ground,
     sanitize_elevation,
@@ -176,3 +178,24 @@ def test_annotate_buildings_finds_eave_and_roof_style() -> None:
     assert small.depth > 2.0
     assert large.roof_style == "flat"
     assert large.depth > 2.0
+
+
+def test_baked_ground_ao_and_shadow_are_directional() -> None:
+    texture = np.zeros((32, 32, 4), dtype=np.uint8)
+    texture[..., :3] = (40, 110, 60)
+    texture[..., 3] = 255
+    tree = WorldObject(
+        asset_id="tree", kind="tree", bbox=(32, 32, 64, 64),
+        footprint=(32, 32, 64, 64), anchor=(48, 64),
+        elevation=0, texture=texture,
+    )
+
+    ao = bake_ground_ao([tree], [], 96, 96)
+    assert ao[63, 48, 3] > 0
+    assert ao[2, 2, 3] == 0
+
+    shadow = bake_ground_shadow([tree], [], 96, 96, shadow_dir=(1.0, 0.0))
+    # The sun is on the left, so the card projects to the right of its base.
+    assert shadow[64, 86, 3] > 0
+    assert shadow[64, 86, 3] > shadow[64, 10, 3]
+    assert shadow[2, 2, 3] == 0
