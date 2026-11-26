@@ -18,6 +18,11 @@ drifting motes, and a restrained tilt-shift at the frame edges:
 
 ![Route 101 compiled from a live Gen 3 session and rendered in Godot](docs/images/gen3hd-route101.png)
 
+Before the presentation pass and after it — the geometry is the same compiled
+map, but the flat cards now sit in a lit, grounded diorama:
+
+![Before and after the presentation pass](docs/images/gen3hd-before-after.png)
+
 A whole-map orthographic view is available with `--camera=map`:
 
 ![Route 101 whole-map orthographic view](docs/images/gen3hd-route101-map.png)
