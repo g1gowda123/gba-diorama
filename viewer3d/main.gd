@@ -397,6 +397,8 @@ func _preset_for(name: String) -> Dictionary:
 			"exposure": 1.0,
 			"shadow_strength": 1.05,
 			"vignette": 0.50,
+			"soil_top": Color(0.26, 0.185, 0.120),
+			"soil_bottom": Color(0.060, 0.070, 0.085),
 		},
 		"day": {
 			"bg_top": Color(0.120, 0.220, 0.380),
@@ -422,6 +424,8 @@ func _preset_for(name: String) -> Dictionary:
 			"exposure": 1.0,
 			"shadow_strength": 0.45,
 			"vignette": 0.25,
+			"soil_top": Color(0.34, 0.255, 0.175),
+			"soil_bottom": Color(0.115, 0.120, 0.135),
 		},
 		"dusk": {
 			"bg_top": Color(0.016, 0.010, 0.026),
@@ -447,6 +451,8 @@ func _preset_for(name: String) -> Dictionary:
 			"exposure": 1.0,
 			"shadow_strength": 1.0,
 			"vignette": 0.55,
+			"soil_top": Color(0.24, 0.150, 0.115),
+			"soil_bottom": Color(0.070, 0.055, 0.085),
 		},
 		"night": {
 			"bg_top": Color(0.004, 0.007, 0.016),
@@ -472,6 +478,8 @@ func _preset_for(name: String) -> Dictionary:
 			"exposure": 1.0,
 			"shadow_strength": 0.95,
 			"vignette": 0.60,
+			"soil_top": Color(0.115, 0.105, 0.105),
+			"soil_bottom": Color(0.030, 0.035, 0.055),
 		},
 	}
 	var chosen: Dictionary = presets.get(name, presets["golden"])
@@ -693,8 +701,8 @@ func _build_terrain() -> void:
 	if wall_mesh != null:
 		var wall_mat := ShaderMaterial.new()
 		wall_mat.shader = load("res://shaders/wall.gdshader")
-		wall_mat.set_shader_parameter("top_color", Color(0.23, 0.165, 0.115))
-		wall_mat.set_shader_parameter("bottom_color", Color(0.055, 0.065, 0.080))
+		wall_mat.set_shader_parameter("top_color", preset.get("soil_top", Color(0.23, 0.165, 0.115)))
+		wall_mat.set_shader_parameter("bottom_color", preset.get("soil_bottom", Color(0.055, 0.065, 0.080)))
 		wall_mat.set_shader_parameter("top_y", 0.1)
 		wall_mat.set_shader_parameter("bottom_y", -1.85)
 		wall_mesh.surface_set_material(0, wall_mat)
@@ -802,8 +810,11 @@ func _add_rim_lip() -> void:
 			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
 			Vector3.RIGHT
 		)
+	# Shaded earth, not a black stroke: at grazing angles the side edges are
+	# just this band, so a near-black colour read as a cut-out line.
+	var band_soil: Color = preset.get("soil_top", Color(0.23, 0.165, 0.115))
 	var band_mat := StandardMaterial3D.new()
-	band_mat.albedo_color = Color(0.03, 0.025, 0.02, 0.42)
+	band_mat.albedo_color = Color(band_soil.r * 0.55, band_soil.g * 0.52, band_soil.b * 0.50, 0.62)
 	band_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	band_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	band_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -854,8 +865,12 @@ func _add_underside() -> void:
 		)
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/wall.gdshader")
-	mat.set_shader_parameter("top_color", Color(0.135, 0.108, 0.080))
-	mat.set_shader_parameter("bottom_color", Color(0.030, 0.032, 0.048))
+	var soil_top: Color = preset.get("soil_top", Color(0.23, 0.165, 0.115))
+	var soil_bottom: Color = preset.get("soil_bottom", Color(0.055, 0.065, 0.080))
+	# The skirt is the island's shadowed underside: read the darker end of the
+	# preset's soil ramp so it does not glow lighter than the wall above it.
+	mat.set_shader_parameter("top_color", Color(soil_bottom.r * 1.25, soil_bottom.g * 1.20, soil_bottom.b * 1.15))
+	mat.set_shader_parameter("bottom_color", Color(soil_bottom.r * 0.55, soil_bottom.g * 0.55, soil_bottom.b * 0.70))
 	mat.set_shader_parameter("top_y", base_y)
 	mat.set_shader_parameter("bottom_y", base_y - 1.1)
 	var mesh := st.commit()
@@ -1681,6 +1696,10 @@ func _add_cliff_detail() -> void:
 		_grass_fringe_texture(0x2F7),
 	]
 	var fringe_texture: Texture2D = fringe_textures[0]
+	# The fringe and vines are painted greens; tinting them with the time
+	# preset's card tint keeps them in the same light as the grass instead of
+	# daytime green under a moonlight grade.
+	var foliage_tint: Color = preset.get("card_tint", Color(1.0, 1.0, 1.0))
 	if fringe_enabled:
 		# Front lip plus both side rims.  The sides used to be a bare
 		# grass-to-void line while the front was tufted, which read as two
@@ -1690,12 +1709,15 @@ func _add_cliff_detail() -> void:
 		while fringe_x < float(map_w):
 			fringe_texture = fringe_textures[column % fringe_textures.size()]
 			column += 1
+			# Uneven widths and steps keep the lip from reading as a stencil.
+			var tuft_w := 0.78 + rng.randf() * 0.38
+			var tuft_h := 0.28 + rng.randf() * 0.12
 			_add_billboard(
-				fringe_texture, 1.0, 0.34,
-				Vector3(fringe_x + 0.5, -0.10, float(map_h) + 0.035),
-				Color(1.0, 1.0, 1.0), false, false, 1.0, false
+				fringe_texture, tuft_w, tuft_h,
+				Vector3(fringe_x + tuft_w * 0.5, -0.10 - rng.randf() * 0.03, float(map_h) + 0.035),
+				foliage_tint, false, false, 1.0, false
 			)
-			fringe_x += 0.94
+			fringe_x += tuft_w * (0.72 + rng.randf() * 0.34)
 		# Side tufts are narrower and inset by half their width: a billboard
 		# always faces the camera, so one centred on the rim sticks out into
 		# the void as a floating green strip.
@@ -1706,12 +1728,12 @@ func _add_cliff_detail() -> void:
 			_add_billboard(
 				fringe_texture, 0.50, 0.26,
 				Vector3(0.30, -0.09, fringe_z + 0.5),
-				Color(0.94, 1.0, 0.94), false, false, 1.0, false
+				foliage_tint, false, false, 1.0, false
 			)
 			_add_billboard(
 				fringe_texture, 0.50, 0.26,
 				Vector3(float(map_w) - 0.30, -0.09, fringe_z + 0.5),
-				Color(0.94, 1.0, 0.94), false, false, 1.0, false
+				foliage_tint, false, false, 1.0, false
 			)
 			fringe_z += 1.12
 	if vines_enabled:
@@ -1726,7 +1748,7 @@ func _add_cliff_detail() -> void:
 				-length * 0.5 + 0.02,
 				float(map_h) + 0.06
 			)
-			_add_billboard(texture, width, length, pos, Color(0.92, 1.0, 0.88), false, false, 1.0, false)
+			_add_billboard(texture, width, length, pos, foliage_tint * Color(0.92, 1.0, 0.88), false, false, 1.0, false)
 		# Side vines are shorter so they read as the same face seen at an
 		# angle rather than as full-length curtains.
 		for z in range(1, map_h, 3):
@@ -1735,12 +1757,12 @@ func _add_cliff_detail() -> void:
 			_add_billboard(
 				side_tex, 0.30, short,
 				Vector3(-0.03, -short * 0.5 + 0.02, float(z) + 0.5),
-				Color(0.90, 1.0, 0.88), false, false, 1.0, false
+				foliage_tint * Color(0.90, 1.0, 0.88), false, false, 1.0, false
 			)
 			_add_billboard(
 				side_tex, 0.30, short,
 				Vector3(float(map_w) + 0.03, -short * 0.5 + 0.02, float(z) + 0.5 + rng.randf() * 0.6),
-				Color(0.90, 1.0, 0.88), false, false, 1.0, false
+				foliage_tint * Color(0.90, 1.0, 0.88), false, false, 1.0, false
 			)
 	if rocks_enabled:
 		var rock_mat := StandardMaterial3D.new()
