@@ -940,9 +940,11 @@ def annotate_buildings(objects: list[WorldObject]) -> None:
 
 
 def _scroll(state: GbaSnapshot) -> tuple[int, int]:
-    # BG2 is the ground layer in Gen 3's field renderer.  The scroll registers
-    # are the camera offset, so screen + scroll is a world pixel.
-    return int(state.io[0x14]) & 0x1FF, int(state.io[0x15]) & 0x1FF
+    # BG2 is the ground layer in Gen 3's field renderer.  ``io`` is a 16-bit
+    # view, so BG2HOFS/VOFS at byte offsets 0x18/0x1A are indices 12/13.  The
+    # scroll registers are the camera offset, so screen + scroll is a world
+    # pixel.
+    return int(state.io[12]) & 0x1FF, int(state.io[13]) & 0x1FF
 
 
 def build_sprites(

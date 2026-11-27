@@ -27,7 +27,7 @@ def _vram_with_tile() -> np.ndarray:
 def _io(enabled: bool, char_base: int = 1, map_base: int = 0) -> np.ndarray:
     registers = np.zeros(0x100, dtype="<u2")
     registers[0] = 0x0100 if enabled else 0x0000
-    registers[8] = (char_base << 2) | (map_base << 8)
+    registers[4] = (char_base << 2) | (map_base << 8)
     return registers
 
 
@@ -49,7 +49,7 @@ def test_disabled_or_empty_bg0_covers_nothing() -> None:
 def test_scroll_only_samples_the_visible_window() -> None:
     vram = _vram_with_tile()
     io = _io(True)
-    io[0x10] = 128  # BG0HOFS
-    io[0x11] = 64   # BG0VOFS
+    io[8] = 128  # BG0HOFS
+    io[9] = 64   # BG0VOFS
 
     assert bg_layer_coverage(vram, _palette(), io, 0) > 0.95

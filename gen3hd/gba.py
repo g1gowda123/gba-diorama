@@ -96,12 +96,14 @@ def bg_layer_coverage(
     if index < 0 or index > 3:
         return 0.0
     registers = np.frombuffer(bytes(io), dtype="<u2") if not isinstance(io, np.ndarray) else io
-    if registers.size <= 8 + index:
+    if registers.size <= 4 + index:
         return 0.0
     dispcnt = int(registers[0])
     if not (dispcnt >> (8 + index)) & 0x01:
         return 0.0
-    control = int(registers[8 + index])
+    # ``io`` is a 16-bit view: BGxCNT is at byte 0x08 + 2x (index 4 + x), and
+    # BGxHOFS/VOFS at byte 0x10 + 4x (indices 8 + 2x, 9 + 2x).
+    control = int(registers[4 + index])
     # Background char/map bases are VRAM offsets from 0x06000000; only OBJ
     # VRAM lives at 0x10000 and above.
     char_base = ((control >> 2) & 0x03) * 0x4000
@@ -110,8 +112,8 @@ def bg_layer_coverage(
     size = (control >> 14) & 0x03
     width_tiles = 32 if size in (0, 1) else 64
     height_tiles = 32 if size in (0, 2) else 64
-    scroll_x = int(registers[0x10 + index * 2]) & 0x1FF
-    scroll_y = int(registers[0x11 + index * 2]) & 0x1FF
+    scroll_x = int(registers[8 + index * 2]) & 0x1FF
+    scroll_y = int(registers[9 + index * 2]) & 0x1FF
 
     view = np.frombuffer(vram, dtype=np.uint8) if not isinstance(vram, np.ndarray) else vram
     object_vram = view[char_base:]
