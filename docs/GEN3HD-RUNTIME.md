@@ -393,8 +393,13 @@ now.
 - Baked silhouette shadows follow one fixed sun direction (left to right, 38°
   elevation). Changing the sun angle would require re-baking
   `shadow_ground.png`; `tools/rebake_presentation.py` does this from an export.
-- Isolated elevation sentinels (often 15) are flattened to the neighbouring
+- **Isolated elevation sentinels** (often 15) are flattened to the neighbouring
   median. Bridges spanning different elevations should be exempted.
+- **Some interior maps decode without a floor.** A room whose metatiles leave
+  the bottom slots empty (seen in the Fire of Sky hack's bedroom) composites as
+  furniture over black, because the floor's tile entries are not in the
+  metatile the engine draws. Use `--flat` for those frames until the tileset
+  layout difference is identified.
 - Ledges are flattened rather than extruded as steps.
 - Sprites use OAM screen position + BG2 scroll. Parsing `gObjectEvents` would
   give authoritative world coordinates and animation state.
