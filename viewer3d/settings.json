@@ -1,0 +1,45 @@
+{
+  "camera": {
+    "mode": "classic"
+  },
+  "time": "golden",
+  "grade": "cinematic",
+  "buildings": "mesh",
+  "render": {
+    "dof": true,
+    "tilt_shift": true,
+    "vignette": true,
+    "bloom": true,
+    "ssao": true,
+    "fog": true,
+    "particles": true,
+    "dither": true,
+    "sway": true,
+    "letterbox": false
+  },
+  "shadows": {
+    "cast": true,
+    "contact": true,
+    "baked": true,
+    "strength": -1.0
+  },
+  "island": {
+    "cliff_detail": true,
+    "fringe": true,
+    "vines": true,
+    "rocks": true,
+    "shards": true,
+    "rim_lip": true,
+    "glow": true
+  },
+  "lights": {
+    "celestial": true,
+    "door": true,
+    "windows": true,
+    "lanterns": true
+  },
+  "live": {
+    "path": "",
+    "follow": false
+  }
+}

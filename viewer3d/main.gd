@@ -11,6 +11,7 @@ extends Node3D
 
 const SUN_AZIMUTH := -55.0
 const SUN_ELEVATION := 38.0
+const ViewerSettingsScript := preload("res://settings.gd")
 
 var world_dir := ""
 var shot_path := ""
@@ -54,6 +55,22 @@ var test_cards := false
 var shadow_strength_override := -1.0
 var base_shade_override := -1.0
 var cliff_detail := true
+var settings_path := ""
+var settings: Dictionary = {}
+# Fine-grained switches, all defaulting from settings.json.
+var contact_shadows := true
+var baked_shadows := true
+var vignette_enabled := true
+var fringe_enabled := true
+var vines_enabled := true
+var rocks_enabled := true
+var shards_enabled := true
+var island_glow_enabled := true
+var island_rim_lip := true
+var celestial_enabled := true
+var door_lights := true
+var window_lights := true
+var lanterns_enabled := true
 
 var data: Dictionary = {}
 var stage: Node3D
@@ -84,7 +101,7 @@ func _ready() -> void:
 		sway_amount = 0.0
 	elif turntable_dir != "":
 		# The turntable drives a deterministic clock so the loop stays smooth.
-		sway_amount = 0.014
+		sway_amount = 0.014 if sway_enabled else 0.0
 	elif sway_enabled:
 		sway_amount = 0.018
 	if world_dir == "":
@@ -117,6 +134,7 @@ func _ready() -> void:
 	_setup_sun()
 	_build_terrain()
 	_add_ledge_shadows()
+	_add_rim_lip()
 	_add_island_glow()
 	if cliff_detail and camera_mode in ["classic", "map"]:
 		_add_cliff_detail()
@@ -161,7 +179,17 @@ func _ready() -> void:
 
 
 func _parse_args() -> void:
-	for arg in OS.get_cmdline_user_args():
+	var args := OS.get_cmdline_user_args()
+	# Settings load first and command-line flags are applied after, so a flag
+	# always beats the file and the file beats the built-in default.
+	for arg in args:
+		if arg.begins_with("--settings="):
+			settings_path = arg.trim_prefix("--settings=")
+	if settings_path == "" and FileAccess.file_exists("res://settings.json"):
+		settings_path = "res://settings.json"
+	settings = ViewerSettingsScript.load_file(settings_path)
+	_apply_settings()
+	for arg in args:
 		if arg.begins_with("--world="):
 			world_dir = arg.trim_prefix("--world=")
 		elif arg.begins_with("--shot="):
@@ -204,6 +232,32 @@ func _parse_args() -> void:
 			tilt_shift = false
 		elif arg == "--no-cliff-detail":
 			cliff_detail = false
+		elif arg == "--no-contact-shadows":
+			contact_shadows = false
+		elif arg == "--no-baked-shadows":
+			baked_shadows = false
+		elif arg == "--no-vignette":
+			vignette_enabled = false
+		elif arg == "--no-fringe":
+			fringe_enabled = false
+		elif arg == "--no-vines":
+			vines_enabled = false
+		elif arg == "--no-rocks":
+			rocks_enabled = false
+		elif arg == "--no-shards":
+			shards_enabled = false
+		elif arg == "--no-island-glow":
+			island_glow_enabled = false
+		elif arg == "--no-rim-lip":
+			island_rim_lip = false
+		elif arg == "--no-celestial":
+			celestial_enabled = false
+		elif arg == "--no-door-light":
+			door_lights = false
+		elif arg == "--no-window-lights":
+			window_lights = false
+		elif arg == "--no-lanterns":
+			lanterns_enabled = false
 		elif arg == "--tilt-shift":
 			tilt_shift = true
 		elif arg == "--dof":
@@ -244,6 +298,44 @@ func _parse_args() -> void:
 			shadow_strength_override = float(arg.trim_prefix("--shadow-strength="))
 		elif arg.begins_with("--base-shade="):
 			base_shade_override = float(arg.trim_prefix("--base-shade="))
+
+
+func _apply_settings() -> void:
+	# The file is data, the flags are the override; keep the mapping in one
+	# place so adding a switch touches settings.gd, settings.json and here.
+	camera_mode = String(ViewerSettingsScript.value(settings, "camera.mode", camera_mode))
+	time_preset = String(ViewerSettingsScript.value(settings, "time", time_preset))
+	grade_mode = String(ViewerSettingsScript.value(settings, "grade", grade_mode))
+	building_mode = String(ViewerSettingsScript.value(settings, "buildings", building_mode))
+	dof_enabled = bool(ViewerSettingsScript.value(settings, "render.dof", dof_enabled))
+	tilt_shift = bool(ViewerSettingsScript.value(settings, "render.tilt_shift", tilt_shift))
+	vignette_enabled = bool(ViewerSettingsScript.value(settings, "render.vignette", vignette_enabled))
+	post_glow = bool(ViewerSettingsScript.value(settings, "render.bloom", post_glow))
+	post_ssao = bool(ViewerSettingsScript.value(settings, "render.ssao", post_ssao))
+	post_fog = bool(ViewerSettingsScript.value(settings, "render.fog", post_fog))
+	particles_enabled = bool(ViewerSettingsScript.value(settings, "render.particles", particles_enabled))
+	dither_enabled = bool(ViewerSettingsScript.value(settings, "render.dither", dither_enabled))
+	sway_enabled = bool(ViewerSettingsScript.value(settings, "render.sway", sway_enabled))
+	letterbox = bool(ViewerSettingsScript.value(settings, "render.letterbox", letterbox))
+	shadows_enabled = bool(ViewerSettingsScript.value(settings, "shadows.cast", shadows_enabled))
+	contact_shadows = bool(ViewerSettingsScript.value(settings, "shadows.contact", contact_shadows))
+	baked_shadows = bool(ViewerSettingsScript.value(settings, "shadows.baked", baked_shadows))
+	shadow_strength_override = float(ViewerSettingsScript.value(settings, "shadows.strength", shadow_strength_override))
+	cliff_detail = bool(ViewerSettingsScript.value(settings, "island.cliff_detail", cliff_detail))
+	fringe_enabled = bool(ViewerSettingsScript.value(settings, "island.fringe", fringe_enabled))
+	vines_enabled = bool(ViewerSettingsScript.value(settings, "island.vines", vines_enabled))
+	rocks_enabled = bool(ViewerSettingsScript.value(settings, "island.rocks", rocks_enabled))
+	shards_enabled = bool(ViewerSettingsScript.value(settings, "island.shards", shards_enabled))
+	island_glow_enabled = bool(ViewerSettingsScript.value(settings, "island.glow", island_glow_enabled))
+	island_rim_lip = bool(ViewerSettingsScript.value(settings, "island.rim_lip", island_rim_lip))
+	celestial_enabled = bool(ViewerSettingsScript.value(settings, "lights.celestial", celestial_enabled))
+	door_lights = bool(ViewerSettingsScript.value(settings, "lights.door", door_lights))
+	window_lights = bool(ViewerSettingsScript.value(settings, "lights.windows", window_lights))
+	lanterns_enabled = bool(ViewerSettingsScript.value(settings, "lights.lanterns", lanterns_enabled))
+	var live_setting := String(ViewerSettingsScript.value(settings, "live.path", ""))
+	if live_setting != "":
+		live_path = live_setting
+	follow_player = bool(ViewerSettingsScript.value(settings, "live.follow", follow_player))
 
 
 func _apply_window_size() -> void:
@@ -566,7 +658,7 @@ func _build_terrain() -> void:
 	ground_mat.set_shader_parameter("tint", preset["card_tint"])
 	ground_mat.set_shader_parameter("emission_lift", preset["emission"])
 	ground_mat.set_shader_parameter("ao_strength", 0.55)
-	ground_mat.set_shader_parameter("shadow_strength", preset["shadow_strength"] if shadow_strength_override < 0.0 else shadow_strength_override)
+	ground_mat.set_shader_parameter("shadow_strength", _baked_shadow_strength())
 	ground_mat.set_shader_parameter("shadow_tint", Color(0.42, 0.58, 0.96))
 	ground_mat.set_shader_parameter("variation", 0.045)
 	ground_mat.set_shader_parameter("wash_warm", preset.get("wash_warm", Color(1.035, 1.005, 0.955)))
@@ -607,7 +699,72 @@ func _build_terrain() -> void:
 		stage.add_child(wall_instance)
 
 
+func _add_rim_lip() -> void:
+	# A soft soil border just inside the top rim.  Without it a tree or bush
+	# anchored on the boundary ends in a flat cut against the void; with it the
+	# island keeps a lip of earth all the way round, and the fringe hangs from
+	# something solid.
+	if not island_rim_lip:
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0x1A9
+	for x in range(map_w):
+		var width := 0.11 + rng.randf() * 0.12
+		var h0 := _cell_height(x, 0) + 0.006
+		var h1 := _cell_height(x, map_h - 1) + 0.006
+		_add_quad(
+			st,
+			Vector3(x, h0, 0.0), Vector3(x, h0, width),
+			Vector3(x + 1, h0, width), Vector3(x + 1, h0, 0.0),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.UP
+		)
+		_add_quad(
+			st,
+			Vector3(x, h1, float(map_h) - width), Vector3(x, h1, float(map_h)),
+			Vector3(x + 1, h1, float(map_h)), Vector3(x + 1, h1, float(map_h) - width),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.UP
+		)
+	for z in range(map_h):
+		var width := 0.11 + rng.randf() * 0.12
+		var hl := _cell_height(0, z) + 0.006
+		var hr := _cell_height(map_w - 1, z) + 0.006
+		_add_quad(
+			st,
+			Vector3(0.0, hl, z), Vector3(width, hl, z),
+			Vector3(width, hl, z + 1), Vector3(0.0, hl, z + 1),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.UP
+		)
+		_add_quad(
+			st,
+			Vector3(float(map_w) - width, hr, z), Vector3(float(map_w), hr, z),
+			Vector3(float(map_w), hr, z + 1), Vector3(float(map_w) - width, hr, z + 1),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.UP
+		)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.115, 0.085, 0.055, 0.62)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	var mesh := st.commit()
+	if mesh == null:
+		return
+	mesh.surface_set_material(0, mat)
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(instance)
+
+
 func _add_island_glow() -> void:
+	if not island_glow_enabled:
+		return
 	# A soft cool pool under the slab sells the float without tiling the void.
 	var quad := QuadMesh.new()
 	quad.size = Vector2(map_w * 2.3, map_h * 2.3)
@@ -846,6 +1003,8 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 
 
 func _add_door_light(cx: float, base_y: float, cz: float) -> void:
+	if not door_lights:
+		return
 	# A warm point light and a tiny additive spill read as light escaping the
 	# doorway at dusk.  It is deliberately small: the pixel art still carries
 	# the facade.
@@ -897,7 +1056,8 @@ func _add_door_light(cx: float, base_y: float, cz: float) -> void:
 	glow.position = Vector3(cx, base_y + 0.34, cz + 0.04)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(glow)
-	_add_lantern(Vector3(cx + 0.46, base_y + 1.02, cz + 0.04))
+	if lanterns_enabled:
+		_add_lantern(Vector3(cx + 0.46, base_y + 1.02, cz + 0.04))
 
 	# A wider, fainter wash tints the facade around the doorway.  The wall
 	# material is unshaded, so this additive card is what sells the spill.
@@ -1093,7 +1253,7 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 
 
 func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> MeshInstance3D:
-	if shadow_tex == null or not shadows_enabled:
+	if shadow_tex == null or not shadows_enabled or not contact_shadows:
 		return null
 	var length := clampf(h * 0.45, 0.25, 2.4)
 	if kind == "building":
@@ -1104,8 +1264,12 @@ func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> MeshIn
 
 
 func _add_contact_shadow_quad(center: Vector3, width: float, length: float, opacity: float) -> MeshInstance3D:
-	if shadow_tex == null or not shadows_enabled:
+	if shadow_tex == null or not shadows_enabled or not contact_shadows:
 		return null
+	# Keep the quad on the island: a shadow centred past the rim floats in the
+	# void and reads as a stray dark patch.
+	center.x = clampf(center.x, 0.3, float(map_w) - 0.3)
+	center.z = clampf(center.z, 0.3, float(map_h) - 0.3)
 	# Geometry is built around the origin and the node is moved into place, so
 	# a live sprite can carry its shadow with it.
 	var right := Vector3(-shadow_dir.z, 0.0, shadow_dir.x)
@@ -1138,6 +1302,12 @@ func _add_contact_shadow_quad(center: Vector3, width: float, length: float, opac
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(instance)
 	return instance
+
+
+func _baked_shadow_strength() -> float:
+	if not baked_shadows:
+		return 0.0
+	return preset["shadow_strength"] if shadow_strength_override < 0.0 else shadow_strength_override
 
 
 func _render_turntable() -> void:
@@ -1278,6 +1448,8 @@ func _add_backdrop() -> void:
 
 
 func _add_celestial() -> void:
+	if not celestial_enabled:
+		return
 	if camera_mode != "classic" or camera_node == null:
 		return
 	var depth := camera_distance * 0.55
@@ -1389,69 +1561,117 @@ func _add_motes() -> void:
 func _add_cliff_detail() -> void:
 	# Hanging vines and protruding rocks break the cut face into a cliff.  It
 	# is presentation-only detail: the map itself is untouched.
+	if not cliff_detail:
+		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0x6E33D
-	# A grass fringe hangs over the lip so the cut edge is organic.
 	var fringe_texture := _grass_fringe_texture(0x51A)
-	var fringe_x := 0.0
-	while fringe_x < float(map_w):
-		var width := 1.0
-		var pos := Vector3(fringe_x + width * 0.5, -0.10, float(map_h) + 0.035)
-		_add_billboard(fringe_texture, width, 0.34, pos, Color(1.0, 1.0, 1.0), false, false, 1.0, false)
-		fringe_x += width * 0.94
-	for x in range(0, map_w, 2):
-		if rng.randf() < 0.30:
-			continue
-		var length := 0.75 + rng.randf() * 0.9
-		var width := 0.34 + rng.randf() * 0.16
-		var texture := _vine_texture(1000 + x * 31 + map_h)
-		var pos := Vector3(
-			float(x) + 0.35 + rng.randf() * 0.3,
-			-length * 0.5 + 0.02,
-			float(map_h) + 0.06
-		)
-		_add_billboard(texture, width, length, pos, Color(0.92, 1.0, 0.88), false, false, 1.0, false)
+	if fringe_enabled:
+		# Front lip plus both side rims.  The sides used to be a bare
+		# grass-to-void line while the front was tufted, which read as two
+		# different objects.
+		var fringe_x := 0.0
+		while fringe_x < float(map_w):
+			_add_billboard(
+				fringe_texture, 1.0, 0.34,
+				Vector3(fringe_x + 0.5, -0.10, float(map_h) + 0.035),
+				Color(1.0, 1.0, 1.0), false, false, 1.0, false
+			)
+			fringe_x += 0.94
+		# Side tufts are narrower and inset by half their width: a billboard
+		# always faces the camera, so one centred on the rim sticks out into
+		# the void as a floating green strip.
+		var fringe_z := 0.0
+		# Stop short of the front corner: the corner tuft is the one that
+		# creeps past the silhouette where the two rims meet.
+		while fringe_z < float(map_h) - 0.9:
+			_add_billboard(
+				fringe_texture, 0.50, 0.26,
+				Vector3(0.30, -0.09, fringe_z + 0.5),
+				Color(0.94, 1.0, 0.94), false, false, 1.0, false
+			)
+			_add_billboard(
+				fringe_texture, 0.50, 0.26,
+				Vector3(float(map_w) - 0.30, -0.09, fringe_z + 0.5),
+				Color(0.94, 1.0, 0.94), false, false, 1.0, false
+			)
+			fringe_z += 1.12
+	if vines_enabled:
+		for x in range(0, map_w, 2):
+			if rng.randf() < 0.30:
+				continue
+			var length := 0.75 + rng.randf() * 0.9
+			var width := 0.34 + rng.randf() * 0.16
+			var texture := _vine_texture(1000 + x * 31 + map_h)
+			var pos := Vector3(
+				float(x) + 0.35 + rng.randf() * 0.3,
+				-length * 0.5 + 0.02,
+				float(map_h) + 0.06
+			)
+			_add_billboard(texture, width, length, pos, Color(0.92, 1.0, 0.88), false, false, 1.0, false)
+		# Side vines are shorter so they read as the same face seen at an
+		# angle rather than as full-length curtains.
+		for z in range(1, map_h, 3):
+			var short := 0.55 + rng.randf() * 0.55
+			var side_tex := _vine_texture(2000 + z * 17 + map_w)
+			_add_billboard(
+				side_tex, 0.30, short,
+				Vector3(-0.03, -short * 0.5 + 0.02, float(z) + 0.5),
+				Color(0.90, 1.0, 0.88), false, false, 1.0, false
+			)
+			_add_billboard(
+				side_tex, 0.30, short,
+				Vector3(float(map_w) + 0.03, -short * 0.5 + 0.02, float(z) + 0.5 + rng.randf() * 0.6),
+				Color(0.90, 1.0, 0.88), false, false, 1.0, false
+			)
+	if rocks_enabled:
+		var rock_mat := StandardMaterial3D.new()
+		rock_mat.albedo_color = Color(0.13, 0.125, 0.115)
+		rock_mat.roughness = 1.0
+		rock_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		for index in range(7):
+			var rock := BoxMesh.new()
+			var size := 0.22 + rng.randf() * 0.30
+			rock.size = Vector3(size, size * (0.7 + rng.randf() * 0.8), size * 0.8)
+			var instance := MeshInstance3D.new()
+			instance.mesh = rock
+			instance.material_override = rock_mat
+			instance.position = Vector3(
+				rng.randf() * map_w,
+				-0.55 - rng.randf() * 1.05,
+				float(map_h) + 0.10
+			)
+			instance.rotation_degrees = Vector3(
+				rng.randf() * 30.0 - 15.0,
+				rng.randf() * 50.0,
+				rng.randf() * 24.0 - 12.0
+			)
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			stage.add_child(instance)
 
-	var rock_mat := StandardMaterial3D.new()
-	rock_mat.albedo_color = Color(0.13, 0.125, 0.115)
-	rock_mat.roughness = 1.0
-	rock_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	for index in range(7):
-		var rock := BoxMesh.new()
-		var size := 0.22 + rng.randf() * 0.30
-		rock.size = Vector3(size, size * (0.7 + rng.randf() * 0.8), size * 0.8)
-		var instance := MeshInstance3D.new()
-		instance.mesh = rock
-		instance.material_override = rock_mat
-		instance.position = Vector3(
-			rng.randf() * map_w,
-			-0.55 - rng.randf() * 1.05,
-			float(map_h) + 0.10
-		)
-		instance.rotation_degrees = Vector3(
-			rng.randf() * 30.0 - 15.0,
-			rng.randf() * 50.0,
-			rng.randf() * 24.0 - 12.0
-		)
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		stage.add_child(instance)
-
-	# A few detached shards under the island sell the float.
-	for index in range(5):
-		var shard := BoxMesh.new()
-		var size := 0.12 + rng.randf() * 0.26
-		shard.size = Vector3(size, size * 1.2, size)
-		var instance := MeshInstance3D.new()
-		instance.mesh = shard
-		instance.material_override = rock_mat
-		instance.position = Vector3(
-			rng.randf() * map_w * 1.10 - map_w * 0.05,
-			-2.15 - rng.randf() * 1.4,
-			rng.randf() * map_h * 1.05
-		)
-		instance.rotation_degrees = Vector3(rng.randf() * 360.0, rng.randf() * 360.0, rng.randf() * 360.0)
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		stage.add_child(instance)
+	if shards_enabled:
+		# A few shards under the slab sell the float, but they stay inside the
+		# island's own footprint: scattered across the void they read as stray
+		# pixels rather than debris from this island.
+		var shard_mat := StandardMaterial3D.new()
+		shard_mat.albedo_color = Color(0.12, 0.115, 0.105)
+		shard_mat.roughness = 1.0
+		shard_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		for index in range(4):
+			var shard := BoxMesh.new()
+			var size := 0.10 + rng.randf() * 0.16
+			shard.size = Vector3(size, size * 1.25, size)
+			var instance := MeshInstance3D.new()
+			instance.mesh = shard
+			instance.material_override = shard_mat
+			instance.position = Vector3(
+				float(map_w) * 0.18 + rng.randf() * float(map_w) * 0.64,
+				-1.98 - rng.randf() * 0.50,
+				float(map_h) * 0.32 + rng.randf() * float(map_h) * 0.54
+			)
+			instance.rotation_degrees = Vector3(rng.randf() * 360.0, rng.randf() * 360.0, rng.randf() * 360.0)
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			stage.add_child(instance)
 
 
 func _vine_texture(seed: int) -> ImageTexture:
@@ -1505,6 +1725,8 @@ func _grass_fringe_texture(seed: int) -> ImageTexture:
 
 
 func _add_window_glow(window_box: Array, texture: Texture2D, x_origin: float, base_y: float, front_z: float) -> void:
+	if not window_lights:
+		return
 	if window_box.size() < 4:
 		return
 	var wx0 := float(window_box[0])
@@ -1814,6 +2036,8 @@ func _add_tilt_shift() -> void:
 
 
 func _add_vignette() -> void:
+	if not vignette_enabled:
+		return
 	var layer := CanvasLayer.new()
 	layer.layer = 10
 	var root := Control.new()

@@ -140,6 +140,45 @@ are moved (a stale OAM entry cannot be proven empty without decoding its
 tiles). `--walk` is a convenience for demos; without it the link steps frames
 and an interactive session or playtest window drives the game.
 
+### Settings
+
+Every presentation switch lives in `viewer3d/settings.json`; a user disables a
+feature by editing that file, not by remembering flags. Command-line flags are
+applied after the file, so a one-off render can override it:
+
+```bash
+# shadows off, lanterns off, rim detail off, for a flat reference render
+godot --path viewer3d -- --world="$PWD/out/gen3hd-world" \
+    --shot=/tmp/flat.png --settings=my-settings.json --no-shadows
+```
+
+```json
+{
+  "camera": { "mode": "classic" },
+  "time": "golden",
+  "grade": "cinematic",
+  "buildings": "mesh",
+  "render": { "dof": true, "tilt_shift": true, "vignette": true, "bloom": true,
+              "ssao": true, "fog": true, "particles": true, "dither": true,
+              "sway": true, "letterbox": false },
+  "shadows": { "cast": true, "contact": true, "baked": true, "strength": -1.0 },
+  "island": { "cliff_detail": true, "fringe": true, "vines": true, "rocks": true,
+              "shards": true, "rim_lip": true, "glow": true },
+  "lights": { "celestial": true, "door": true, "windows": true, "lanterns": true },
+  "live": { "path": "", "follow": false }
+}
+```
+
+Allowed values: `camera.mode` is `classic`, `hero`, `play` or `map`; `time` is
+`golden`, `day`, `dusk` or `night`; `grade` is `cinematic` or `none`;
+`buildings` is `mesh` or `card`.
+
+The three shadow paths are independent: `cast` is the real-time shadow map,
+`contact` the soft quads under cards and sprites, `baked` the pre-baked ground
+overlay (`strength` < 0 keeps the time preset's value). Unknown keys are
+ignored and a missing key falls back to the built-in default, so an older file
+keeps working after a switch is added.
+
 ### Viewer flags
 
 | Flag | Meaning |
@@ -164,6 +203,15 @@ and an interactive session or playtest window drives the game.
 | `--no-shadows` | disable real-time shadows (baked ground overlays remain) |
 | `--live=<json>` | poll a `gen3hd live` feed and move the sprite billboards |
 | `--follow` | keep the `play`/`hero` camera on the live player sprite |
+| `--settings=<json>` | settings file (default `viewer3d/settings.json`) |
+| `--no-contact-shadows` | drop the soft quads under cards and sprites |
+| `--no-baked-shadows` | drop the pre-baked ground shadow overlay |
+| `--no-vignette` | drop the corner vignette |
+| `--no-fringe` / `--no-vines` / `--no-rocks` / `--no-shards` | island rim detail |
+| `--no-rim-lip` | drop the soil lip along the top edge |
+| `--no-island-glow` | drop the cool pool under the slab |
+| `--no-celestial` | hide the sun/moon disc |
+| `--no-door-light` / `--no-window-lights` / `--no-lanterns` | dusk/night light sources |
 | `--focus=x,z` | focus override in map tiles |
 | `--pitch=`, `--yaw=`, `--distance=` | camera overrides |
 | `--turntable=N` | render N frames while the camera sways, then exit |
