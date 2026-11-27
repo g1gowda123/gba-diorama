@@ -761,6 +761,57 @@ func _add_rim_lip() -> void:
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(instance)
 
+	# A darker band on the outer face just under the lip.  The wall shader is a
+	# flat gradient, so without this the overhang reads as pasted onto the
+	# cliff instead of casting a shadow onto it.
+	var band := SurfaceTool.new()
+	band.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var drop := 0.14
+	for x in range(map_w):
+		var hf := _cell_height(x, map_h - 1)
+		_add_quad(
+			band,
+			Vector3(x, hf + 0.004, float(map_h) + 0.004),
+			Vector3(x, hf - drop, float(map_h) + 0.004),
+			Vector3(x + 1, hf - drop, float(map_h) + 0.004),
+			Vector3(x + 1, hf + 0.004, float(map_h) + 0.004),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.BACK
+		)
+	for z in range(map_h):
+		var hl := _cell_height(0, z)
+		var hr := _cell_height(map_w - 1, z)
+		_add_quad(
+			band,
+			Vector3(-0.004, hl + 0.004, z), Vector3(-0.004, hl - drop, z),
+			Vector3(-0.004, hl - drop, z + 1), Vector3(-0.004, hl + 0.004, z + 1),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.LEFT
+		)
+		_add_quad(
+			band,
+			Vector3(float(map_w) + 0.004, hr + 0.004, z),
+			Vector3(float(map_w) + 0.004, hr - drop, z),
+			Vector3(float(map_w) + 0.004, hr - drop, z + 1),
+			Vector3(float(map_w) + 0.004, hr + 0.004, z + 1),
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			Vector3.RIGHT
+		)
+	var band_mat := StandardMaterial3D.new()
+	band_mat.albedo_color = Color(0.03, 0.025, 0.02, 0.42)
+	band_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	band_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	band_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	band_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	var band_mesh := band.commit()
+	if band_mesh == null:
+		return
+	band_mesh.surface_set_material(0, band_mat)
+	var band_instance := MeshInstance3D.new()
+	band_instance.mesh = band_mesh
+	band_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(band_instance)
+
 
 func _add_island_glow() -> void:
 	if not island_glow_enabled:
