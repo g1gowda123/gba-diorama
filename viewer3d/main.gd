@@ -821,6 +821,14 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 			Vector3(cx, wall_top + 0.02, mid_z),
 			Vector3(-90, 0, 0), roof_mat
 		)
+		# A thin fascia catches the light and separates a flat roof from the
+		# facade instead of letting the texture melt into the wall.
+		var fascia_mat := _flat_material(roof_tint * 1.12)
+		_add_face_quad(
+			Vector2(w + 0.46, 0.07),
+			Vector3(cx, wall_top + 0.055, cz + 0.025),
+			Vector3.ZERO, fascia_mat
+		)
 	_add_contact_shadow_quad(Vector3(cx, base_y + 0.014, mid_z), w * 1.45, depth * 1.25, 0.30)
 
 
