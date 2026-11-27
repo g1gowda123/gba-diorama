@@ -67,6 +67,7 @@ var rocks_enabled := true
 var shards_enabled := true
 var island_glow_enabled := true
 var island_rim_lip := true
+var island_underside := true
 var celestial_enabled := true
 var door_lights := true
 var window_lights := true
@@ -135,6 +136,7 @@ func _ready() -> void:
 	_build_terrain()
 	_add_ledge_shadows()
 	_add_rim_lip()
+	_add_underside()
 	_add_island_glow()
 	if cliff_detail and camera_mode in ["classic", "map"]:
 		_add_cliff_detail()
@@ -250,6 +252,8 @@ func _parse_args() -> void:
 			island_glow_enabled = false
 		elif arg == "--no-rim-lip":
 			island_rim_lip = false
+		elif arg == "--no-underside":
+			island_underside = false
 		elif arg == "--no-celestial":
 			celestial_enabled = false
 		elif arg == "--no-door-light":
@@ -328,6 +332,7 @@ func _apply_settings() -> void:
 	shards_enabled = bool(ViewerSettingsScript.value(settings, "island.shards", shards_enabled))
 	island_glow_enabled = bool(ViewerSettingsScript.value(settings, "island.glow", island_glow_enabled))
 	island_rim_lip = bool(ViewerSettingsScript.value(settings, "island.rim_lip", island_rim_lip))
+	island_underside = bool(ViewerSettingsScript.value(settings, "island.underside", island_underside))
 	celestial_enabled = bool(ViewerSettingsScript.value(settings, "lights.celestial", celestial_enabled))
 	door_lights = bool(ViewerSettingsScript.value(settings, "lights.door", door_lights))
 	window_lights = bool(ViewerSettingsScript.value(settings, "lights.windows", window_lights))
@@ -813,26 +818,79 @@ func _add_rim_lip() -> void:
 	stage.add_child(band_instance)
 
 
+func _add_underside() -> void:
+	# The wall mesh stops at one flat depth, which reads as an extruded box
+	# from a low camera.  A jagged rock skirt below that line breaks the
+	# silhouette into broken earth without touching the map.
+	if not island_underside:
+		return
+	var base_y := -1.85
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0x4B17
+
+	var edges: Array = []
+	for x in range(map_w):
+		edges.append([Vector3(x, 0.0, 0.0), Vector3(x + 1, 0.0, 0.0), Vector3(0.0, 0.0, -0.015)])
+		edges.append([Vector3(x, 0.0, float(map_h)), Vector3(x + 1, 0.0, float(map_h)), Vector3(0.0, 0.0, 0.015)])
+	for z in range(map_h):
+		edges.append([Vector3(0.0, 0.0, z), Vector3(0.0, 0.0, z + 1), Vector3(-0.015, 0.0, 0.0)])
+		edges.append([Vector3(float(map_w), 0.0, z), Vector3(float(map_w), 0.0, z + 1), Vector3(0.015, 0.0, 0.0)])
+
+	for edge in edges:
+		var a: Vector3 = edge[0] + edge[2]
+		var b: Vector3 = edge[1] + edge[2]
+		a.y = base_y
+		b.y = base_y
+		var drop := 0.16 + rng.randf() * 0.85
+		var tip_a: Vector3 = a + Vector3(0.0, -drop, 0.0) + edge[2] * 3.0
+		var tip_b: Vector3 = b + Vector3(0.0, -drop * (0.7 + rng.randf() * 0.5), 0.0) + edge[2] * 3.0
+		_add_quad(
+			st,
+			a, tip_a, tip_b, b,
+			Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+			edge[2].normalized()
+		)
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/wall.gdshader")
+	mat.set_shader_parameter("top_color", Color(0.135, 0.108, 0.080))
+	mat.set_shader_parameter("bottom_color", Color(0.030, 0.032, 0.048))
+	mat.set_shader_parameter("top_y", base_y)
+	mat.set_shader_parameter("bottom_y", base_y - 1.1)
+	var mesh := st.commit()
+	if mesh == null:
+		return
+	mesh.surface_set_material(0, mat)
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(instance)
+
+
 func _add_island_glow() -> void:
 	if not island_glow_enabled:
 		return
 	# A soft cool pool under the slab sells the float without tiling the void.
+	# A camera-facing halo, not a flat quad: seen edge-on a horizontal glow
+	# reads as a bright hairline across the underside.
 	var quad := QuadMesh.new()
-	quad.size = Vector2(map_w * 2.3, map_h * 2.3)
+	quad.size = Vector2(map_w * 1.9, map_h * 0.9)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _soft_dot_texture()
-	mat.albedo_color = Color(0.10, 0.22, 0.42, 0.50)
+	mat.albedo_color = Color(0.10, 0.22, 0.42, 0.42)
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.billboard_keep_scale = true
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	var glow := MeshInstance3D.new()
 	glow.mesh = quad
 	glow.material_override = mat
-	glow.position = Vector3(map_w * 0.5, -1.72, map_h * 0.5)
-	glow.rotation_degrees = Vector3(-90, 0, 0)
+	glow.position = Vector3(map_w * 0.5, -2.05, map_h * 0.5)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(glow)
 

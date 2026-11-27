@@ -163,7 +163,7 @@ godot --path viewer3d -- --world="$PWD/out/gen3hd-world" \
               "sway": true, "letterbox": false },
   "shadows": { "cast": true, "contact": true, "baked": true, "strength": -1.0 },
   "island": { "cliff_detail": true, "fringe": true, "vines": true, "rocks": true,
-              "shards": true, "rim_lip": true, "glow": true },
+              "shards": true, "rim_lip": true, "underside": true, "glow": true },
   "lights": { "celestial": true, "door": true, "windows": true, "lanterns": true },
   "live": { "path": "", "follow": false }
 }
@@ -209,6 +209,7 @@ keeps working after a switch is added.
 | `--no-vignette` | drop the corner vignette |
 | `--no-fringe` / `--no-vines` / `--no-rocks` / `--no-shards` | island rim detail |
 | `--no-rim-lip` | drop the soil lip along the top edge |
+| `--no-underside` | drop the jagged rock skirt under the slab |
 | `--no-island-glow` | drop the cool pool under the slab |
 | `--no-celestial` | hide the sun/moon disc |
 | `--no-door-light` / `--no-window-lights` / `--no-lanterns` | dusk/night light sources |

@@ -45,6 +45,7 @@ const DEFAULTS := {
 		"rocks": true,
 		"shards": true,
 		"rim_lip": true,
+		"underside": true,
 		"glow": true,
 	},
 	"lights": {
