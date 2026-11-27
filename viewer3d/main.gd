@@ -123,7 +123,7 @@ func _ready() -> void:
 	_setup_camera()
 	_add_backdrop()
 	_add_celestial()
-	if particles_enabled:
+	if particles_enabled and turntable_dir == "":
 		_add_motes()
 	_create_dither_ghost()
 	_update_dither_visibility()
