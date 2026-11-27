@@ -79,6 +79,72 @@ def decode_8bpp_tile(
     return rgba
 
 
+def bg_layer_coverage(
+    vram: np.ndarray | bytes,
+    palette: np.ndarray,
+    io: np.ndarray,
+    index: int,
+) -> float:
+    """Fraction of the visible screen covered by one text BG layer.
+
+    Used to tell a field map from a screen: a battle, menu or dialogue frame
+    draws its boxes on BG0, while an overworld map leaves BG0 empty.  Only the
+    visible 240x160 window is sampled, so a large scrollable map costs no more
+    than a small one.
+    """
+
+    if index < 0 or index > 3:
+        return 0.0
+    registers = np.frombuffer(bytes(io), dtype="<u2") if not isinstance(io, np.ndarray) else io
+    if registers.size <= 8 + index:
+        return 0.0
+    dispcnt = int(registers[0])
+    if not (dispcnt >> (8 + index)) & 0x01:
+        return 0.0
+    control = int(registers[8 + index])
+    # Background char/map bases are VRAM offsets from 0x06000000; only OBJ
+    # VRAM lives at 0x10000 and above.
+    char_base = ((control >> 2) & 0x03) * 0x4000
+    map_base = ((control >> 8) & 0x1F) * 0x0800
+    eight_bpp = bool(control & 0x80)
+    size = (control >> 14) & 0x03
+    width_tiles = 32 if size in (0, 1) else 64
+    height_tiles = 32 if size in (0, 2) else 64
+    scroll_x = int(registers[0x10 + index * 2]) & 0x1FF
+    scroll_y = int(registers[0x11 + index * 2]) & 0x1FF
+
+    view = np.frombuffer(vram, dtype=np.uint8) if not isinstance(vram, np.ndarray) else vram
+    object_vram = view[char_base:]
+    covered = 0
+    total = 0
+    cache: dict[tuple[int, int], np.ndarray] = {}
+    for py in range(0, 160, 2):
+        for px in range(0, 240, 2):
+            tile_x = (scroll_x + px) // 8 % width_tiles
+            tile_y = (scroll_y + py) // 8 % height_tiles
+            entry_index = tile_y * width_tiles + tile_x
+            offset = map_base + entry_index * 2
+            if offset + 2 > view.size:
+                continue
+            entry = int(view[offset]) | (int(view[offset + 1]) << 8)
+            tile = entry & 0x03FF
+            bank = (entry >> 12) & 0x0F
+            pixel_x = (scroll_x + px) % 8
+            pixel_y = (scroll_y + py) % 8
+            key = (tile, bank if not eight_bpp else -1)
+            rgba = cache.get(key)
+            if rgba is None:
+                if eight_bpp:
+                    rgba = decode_8bpp_tile(object_vram, tile, palette)
+                else:
+                    rgba = decode_4bpp_tile(object_vram, tile, palette, bank)
+                cache[key] = rgba
+            total += 1
+            if rgba[pixel_y, pixel_x, 3] > 0:
+                covered += 1
+    return (covered / total) if total else 0.0
+
+
 @dataclass(slots=True)
 class Sprite:
     """One non-affine OAM entry, already decoded to RGBA."""

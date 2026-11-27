@@ -21,9 +21,11 @@ def _capture(args: argparse.Namespace) -> int:
     snapshot = host.snapshot()
     snapshot.title = rom.header.title
     snapshot.game_code = rom.header.game_code
-    world = compile_world(snapshot, rom, flat=args.flat)
+    world = compile_world(
+        snapshot, rom, flat=args.flat, auto_flat=args.auto_flat
+    )
     out = world.export(args.out)
-    if args.flat:
+    if world.mode == "flat":
         # Flat mode is a screen, not a map: keep the emulator's own frame so
         # BG0 (dialogue, menus) and OAM sprites are in the card too.
         host.screenshot(out / "screen.png")
@@ -31,7 +33,8 @@ def _capture(args: argparse.Namespace) -> int:
         host.screenshot(args.screenshot)
     print(json.dumps(world.summary()["map"], indent=1))
     print(
-        f"family={world.family.value} objects={len(world.objects)} "
+        f"family={world.family.value} mode={world.mode} "
+        f"ui={world.ui_coverage:.2f} objects={len(world.objects)} "
         f"sprites={len(world.sprites)} -> {out}"
     )
     return 0
@@ -84,6 +87,10 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument(
         "--flat", action="store_true",
         help="treat the frame as a screen (battle/menu): one card, no 3D lifting",
+    )
+    capture.add_argument(
+        "--auto-flat", action="store_true",
+        help="pick flat mode when BG0 covers the screen (battle/menu guess)",
     )
     capture.add_argument("--screenshot", default="")
     capture.set_defaults(func=_capture)

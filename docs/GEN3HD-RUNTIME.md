@@ -130,6 +130,12 @@ godot --path viewer3d -- --world="$PWD/out/screen" --shot=/tmp/screen.png
 The card sits on the same rim, soil and underside as a terrain world, and
 `world.json` records `"mode": "flat"` so nothing tries to re-lift it.
 
+`--auto-flat` guesses the mode from BG0 coverage (a battle, menu or dialogue
+draws its boxes there) and `world.json` records that number as `ui_coverage`.
+It is a guess, not a rule: some overworld maps leave a BG0 layer enabled too,
+so flat stays manual by default and the capture prints `mode=`/`ui=` every
+time.
+
 ### Live link
 
 A compiled world is static for one map; the camera scroll and the OAM sprite

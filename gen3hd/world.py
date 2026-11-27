@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .gba import decode_oam, decode_palette, decode_4bpp_tile, Sprite
+from .gba import bg_layer_coverage, decode_oam, decode_palette, decode_4bpp_tile, Sprite
 from .gen3.locate import LocatedMap, locate_map
 from .gen3.rom import (
     GameFamily,
@@ -110,6 +110,9 @@ class WorldModel:
     # "terrain" is a walkable field map; "flat" is a menu/battle frame that is
     # shown as one screen-sized card instead of being lifted into 3D.
     mode: str = "terrain"
+    # BG0 coverage: how much of the screen a UI layer draws.  Reported so a
+    # caller can see why auto-flat did or did not fire.
+    ui_coverage: float = 0.0
 
     @property
     def pixel_width(self) -> int:
@@ -123,6 +126,7 @@ class WorldModel:
         return {
             "format": "gen3hd-world-v1",
             "mode": self.mode,
+            "ui_coverage": round(self.ui_coverage, 3),
             "rom": {
                 "title": self.header,
                 "family": self.family.value,
@@ -977,15 +981,37 @@ def build_sprites(
 # ---------------------------------------------------------------------------
 
 
-def compile_world(state: GbaSnapshot, rom: Gen3Rom, flat: bool = False) -> WorldModel:
+def has_ui_layer(state: GbaSnapshot, threshold: float = 0.05) -> bool:
+    """True when BG0 is drawing something: a screen, not a place.
+
+    Battles, menus and dialogue frames put their boxes on BG0; a field map
+    leaves it empty, so this is the cheapest reliable "is this a screen"
+    signal and it needs no game-specific constants.
+    """
+
+    palette = decode_palette(state.palette)
+    return bg_layer_coverage(state.vram, palette, state.io, 0) > threshold
+
+
+def compile_world(
+    state: GbaSnapshot,
+    rom: Gen3Rom,
+    flat: bool = False,
+    auto_flat: bool = False,
+) -> WorldModel:
     located: LocatedMap = locate_map(state.iwram, state.ewram, rom)
     layout = located.layout
+    ui_coverage = bg_layer_coverage(state.vram, decode_palette(state.palette), state.io, 0)
     composed = compose_layers(state, rom, layout)
     layers = composed["layers"]
     composite = composite_layers(layers)
     composed["elevation"] = sanitize_elevation(
         composed["elevation"], composed["collision"]
     )
+    if not flat and auto_flat:
+        # BG0 coverage alone is not decisive: some overworld maps leave a
+        # layer enabled too.  Opt-in, so a wrong guess never surprises a run.
+        flat = ui_coverage > 0.05
     if flat:
         # A battle, menu or dialogue frame is a screen, not a place: lifting
         # its tiles produces floating slabs and UI boxes.  Keep the composite
@@ -1034,4 +1060,5 @@ def compile_world(state: GbaSnapshot, rom: Gen3Rom, flat: bool = False) -> World
         player=player,
         header=rom.header.title,
         mode="flat" if flat else "terrain",
+        ui_coverage=ui_coverage,
     )
