@@ -111,6 +111,7 @@ func _ready() -> void:
 	_setup_environment()
 	_setup_sun()
 	_build_terrain()
+	_add_ledge_shadows()
 	_add_island_glow()
 	if cliff_detail and camera_mode in ["classic", "map"]:
 		_add_cliff_detail()
@@ -121,6 +122,7 @@ func _ready() -> void:
 		_build_sprites()
 	_setup_camera()
 	_add_backdrop()
+	_add_celestial()
 	if particles_enabled:
 		_add_motes()
 	_create_dither_ghost()
@@ -261,8 +263,10 @@ func _preset_for(name: String) -> Dictionary:
 		"golden": {
 			"bg_top": Color(0.012, 0.030, 0.060),
 			"bg_bottom": Color(0.030, 0.075, 0.120),
-			"glow": Color(0.100, 0.050, 0.020),
-			"glow_center": Vector2(0.25, 0.36),
+			"glow": Color(0.140, 0.065, 0.022),
+			"glow_center": Vector2(0.25, 0.30),
+			"glow_scale": Vector2(1.45, 1.05),
+			"glow_falloff": 3.0,
 			"sun_color": Color(1.00, 0.80, 0.56),
 			"sun_energy": 1.50,
 			"ambient_color": Color(0.30, 0.42, 0.64),
@@ -271,6 +275,10 @@ func _preset_for(name: String) -> Dictionary:
 			"fog_color": Color(0.055, 0.085, 0.100),
 			"fog_density": 0.0035,
 			"card_tint": Color(1.015, 0.995, 0.960),
+			"card_sun": Color(1.06, 1.00, 0.88),
+			"card_shade": Color(0.80, 0.86, 0.98),
+			"wash_warm": Color(1.060, 1.010, 0.940),
+			"wash_cool": Color(0.940, 0.975, 1.040),
 			"mote_color": Color(2.2, 1.7, 0.9, 0.9),
 			"mote_amount": 110,
 			"exposure": 1.0,
@@ -280,8 +288,10 @@ func _preset_for(name: String) -> Dictionary:
 		"day": {
 			"bg_top": Color(0.120, 0.220, 0.380),
 			"bg_bottom": Color(0.220, 0.380, 0.520),
-			"glow": Color(0.150, 0.150, 0.150),
-			"glow_center": Vector2(0.50, 0.42),
+			"glow": Color(0.100, 0.120, 0.140),
+			"glow_center": Vector2(0.25, 0.24),
+			"glow_scale": Vector2(1.35, 1.00),
+			"glow_falloff": 2.8,
 			"sun_color": Color(1.00, 0.95, 0.86),
 			"sun_energy": 1.30,
 			"ambient_color": Color(0.52, 0.64, 0.76),
@@ -290,6 +300,10 @@ func _preset_for(name: String) -> Dictionary:
 			"fog_color": Color(0.115, 0.165, 0.185),
 			"fog_density": 0.0025,
 			"card_tint": Color(1.0, 1.0, 1.0),
+			"card_sun": Color(1.02, 1.00, 0.98),
+			"card_shade": Color(0.92, 0.95, 1.00),
+			"wash_warm": Color(1.025, 1.000, 0.985),
+			"wash_cool": Color(0.975, 0.990, 1.015),
 			"mote_color": Color(1.6, 1.7, 1.4, 0.55),
 			"mote_amount": 70,
 			"exposure": 1.0,
@@ -299,8 +313,10 @@ func _preset_for(name: String) -> Dictionary:
 		"dusk": {
 			"bg_top": Color(0.016, 0.010, 0.026),
 			"bg_bottom": Color(0.070, 0.040, 0.060),
-			"glow": Color(0.36, 0.14, 0.09),
-			"glow_center": Vector2(0.56, 0.47),
+			"glow": Color(0.200, 0.075, 0.025),
+			"glow_center": Vector2(0.25, 0.34),
+			"glow_scale": Vector2(1.50, 1.10),
+			"glow_falloff": 3.0,
 			"sun_color": Color(1.00, 0.60, 0.42),
 			"sun_energy": 1.15,
 			"ambient_color": Color(0.30, 0.28, 0.52),
@@ -309,6 +325,10 @@ func _preset_for(name: String) -> Dictionary:
 			"fog_color": Color(0.075, 0.055, 0.095),
 			"fog_density": 0.0045,
 			"card_tint": Color(1.01, 0.95, 0.97),
+			"card_sun": Color(1.08, 0.94, 0.82),
+			"card_shade": Color(0.78, 0.78, 0.98),
+			"wash_warm": Color(1.070, 0.955, 0.885),
+			"wash_cool": Color(0.905, 0.900, 1.020),
 			"mote_color": Color(2.4, 1.1, 0.55, 0.9),
 			"mote_amount": 120,
 			"exposure": 1.0,
@@ -318,8 +338,10 @@ func _preset_for(name: String) -> Dictionary:
 		"night": {
 			"bg_top": Color(0.004, 0.007, 0.016),
 			"bg_bottom": Color(0.020, 0.032, 0.055),
-			"glow": Color(0.07, 0.12, 0.22),
-			"glow_center": Vector2(0.50, 0.44),
+			"glow": Color(0.035, 0.050, 0.100),
+			"glow_center": Vector2(0.25, 0.28),
+			"glow_scale": Vector2(1.55, 1.10),
+			"glow_falloff": 3.4,
 			"sun_color": Color(0.62, 0.74, 1.00),
 			"sun_energy": 0.55,
 			"ambient_color": Color(0.16, 0.26, 0.50),
@@ -328,6 +350,10 @@ func _preset_for(name: String) -> Dictionary:
 			"fog_color": Color(0.028, 0.055, 0.090),
 			"fog_density": 0.0040,
 			"card_tint": Color(0.84, 0.90, 1.03),
+			"card_sun": Color(0.88, 0.94, 1.10),
+			"card_shade": Color(0.70, 0.80, 1.02),
+			"wash_warm": Color(0.940, 1.000, 1.080),
+			"wash_cool": Color(0.820, 0.900, 1.060),
 			"mote_color": Color(0.9, 2.2, 1.1, 0.9),
 			"mote_amount": 150,
 			"exposure": 1.0,
@@ -357,6 +383,48 @@ func _load_texture_or_empty(path: String) -> ImageTexture:
 	return ImageTexture.create_from_image(image)
 
 
+func _add_ledge_shadows() -> void:
+	# Gen 3 ledge behaviors 56..63 name the direction the player jumps *down*.
+	# A soft strip on that side sells the drop without inventing a full cliff.
+	var directions := {
+		56: Vector2(1, 0), 57: Vector2(-1, 0),
+		58: Vector2(0, -1), 59: Vector2(0, 1),
+		60: Vector2(1, -1), 61: Vector2(-1, -1),
+		62: Vector2(1, 1), 63: Vector2(-1, 1),
+	}
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.15, 0.78)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = _soft_rect_texture()
+	mat.albedo_color = Color(0.0, 0.0, 0.0, 0.30)
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	for z in range(map_h):
+		for x in range(map_w):
+			var behavior := int(behaviors[z][x])
+			if not directions.has(behavior):
+				continue
+			var direction: Vector2 = directions[behavior]
+			var yaw := 0.0
+			if direction.x != 0 and direction.y != 0:
+				yaw = PI * 0.25 * sign(direction.x * direction.y)
+			elif direction.x != 0:
+				yaw = PI * 0.5
+			var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -PI * 0.5)
+			var instance := MeshInstance3D.new()
+			instance.mesh = quad
+			instance.material_override = mat
+			instance.transform = Transform3D(
+				basis,
+				Vector3(x + 0.5 + direction.x * 0.50, 0.006, z + 0.5 + direction.y * 0.50)
+			)
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			stage.add_child(instance)
+
+
 func _cell_height(x: int, z: int) -> float:
 	x = clampi(x, 0, map_w - 1)
 	z = clampi(z, 0, map_h - 1)
@@ -364,8 +432,8 @@ func _cell_height(x: int, z: int) -> float:
 	var behavior := int(behaviors[z][x])
 	# Ledges are a jump-down *edge*, not a pit.  Gen 3 stores elevation 0 on
 	# many of them, which would otherwise become a walled trench.
-	if behavior >= 59 and behavior <= 66:
-		return 0.10
+	if behavior >= 56 and behavior <= 63:
+		return 0.40
 	# A shallow step keeps the whole map readable from a low camera.
 	return (float(row[x]) - 3.0) * 0.08
 
@@ -485,6 +553,8 @@ func _build_terrain() -> void:
 	ground_mat.set_shader_parameter("shadow_strength", preset["shadow_strength"] if shadow_strength_override < 0.0 else shadow_strength_override)
 	ground_mat.set_shader_parameter("shadow_tint", Color(0.42, 0.58, 0.96))
 	ground_mat.set_shader_parameter("variation", 0.045)
+	ground_mat.set_shader_parameter("wash_warm", preset.get("wash_warm", Color(1.035, 1.005, 0.955)))
+	ground_mat.set_shader_parameter("wash_cool", preset.get("wash_cool", Color(0.955, 0.985, 1.035)))
 	ground_mat.set_shader_parameter("map_width", float(map_w))
 	if debug_ground:
 		ground_mat = ShaderMaterial.new()
@@ -854,6 +924,8 @@ func _card_material(texture: Texture2D, tint: Color, use_alpha: bool) -> ShaderM
 	mat.set_shader_parameter("rim_strength", 0.08)
 	mat.set_shader_parameter("base_shade", 0.18)
 	mat.set_shader_parameter("sway_amount", 0.0)
+	mat.set_shader_parameter("sun_tint", preset.get("card_sun", Color(1.04, 1.0, 0.94)))
+	mat.set_shader_parameter("shade_tint", preset.get("card_shade", Color(0.84, 0.88, 1.0)))
 	return mat
 
 
@@ -974,6 +1046,8 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 		mat.set_shader_parameter("rim_color", Color(1.0, 0.80, 0.50))
 		mat.set_shader_parameter("base_shade", 0.30 if base_shade_override < 0.0 else base_shade_override)
 		mat.set_shader_parameter("sway_amount", sway_amount if allow_sway else 0.0)
+		mat.set_shader_parameter("sun_tint", preset.get("card_sun", Color(1.04, 1.0, 0.94)))
+		mat.set_shader_parameter("shade_tint", preset.get("card_shade", Color(0.84, 0.88, 1.0)))
 		if allow_sway and sway_amount > 0.0 and turntable_dir != "":
 			mat.set_shader_parameter("manual_time", true)
 			mat.set_shader_parameter("time_value", 0.0)
@@ -1149,8 +1223,8 @@ func _add_backdrop() -> void:
 	mat.set_shader_parameter("bottom_color", preset["bg_bottom"])
 	mat.set_shader_parameter("glow_color", preset["glow"])
 	mat.set_shader_parameter("glow_center", preset["glow_center"])
-	mat.set_shader_parameter("glow_scale", Vector2(1.60, 1.10))
-	mat.set_shader_parameter("glow_falloff", 4.5)
+	mat.set_shader_parameter("glow_scale", preset.get("glow_scale", Vector2(1.6, 1.1)))
+	mat.set_shader_parameter("glow_falloff", float(preset.get("glow_falloff", 4.5)))
 	var distance := 160.0
 	var quad := QuadMesh.new()
 	var aspect := float(render_size.x) / float(max(1, render_size.y))
@@ -1166,6 +1240,70 @@ func _add_backdrop() -> void:
 	instance.position = Vector3(0.0, 0.0, -distance)
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	camera_node.add_child(instance)
+
+
+func _add_celestial() -> void:
+	if camera_mode != "classic" or camera_node == null:
+		return
+	var depth := camera_distance * 0.55
+	if depth <= 0.0:
+		return
+	var half_height := depth * tan(deg_to_rad(camera_node.fov * 0.5))
+	var half_width := half_height * (float(render_size.x) / float(max(1, render_size.y)))
+	var position := Vector3(-half_width * 0.52, half_height * 0.30, -depth)
+	var colour: Color
+	var size: float
+	match time_preset:
+		"day":
+			colour = Color(1.25, 1.45, 1.70, 0.22)
+			size = 1.50
+			position.y = half_height * 0.58
+		"dusk":
+			colour = Color(1.70, 0.78, 0.36, 0.36)
+			size = 1.85
+			position.y = half_height * 0.24
+		"night":
+			colour = Color(0.72, 0.86, 1.25, 0.40)
+			size = 1.10
+			position.y = half_height * 0.50
+		_:
+			colour = Color(1.55, 0.95, 0.50, 0.25)
+			size = 1.40
+			position.y = half_height * 0.28
+	_add_celestial_disc(position, size * 3.8, Color(colour.r, colour.g, colour.b, 0.08), _soft_dot_texture())
+	_add_celestial_disc(position, size, colour, _disc_texture())
+
+
+func _add_celestial_disc(position: Vector3, size: float, colour: Color, texture: Texture2D) -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(size, size)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = texture
+	mat.albedo_color = colour
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	var instance := MeshInstance3D.new()
+	instance.mesh = quad
+	instance.material_override = mat
+	instance.position = position
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	camera_node.add_child(instance)
+
+
+func _disc_texture() -> ImageTexture:
+	var size := 64
+	var image := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in range(size):
+		for x in range(size):
+			var uv := (Vector2(x, y) + Vector2(0.5, 0.5)) / float(size) * 2.0 - Vector2.ONE
+			var radius := uv.length()
+			var alpha := 1.0 - smoothstep(0.78, 0.94, radius)
+			image.set_pixel(x, y, Color(1, 1, 1, alpha))
+	return ImageTexture.create_from_image(image)
 
 
 func _add_motes() -> void:

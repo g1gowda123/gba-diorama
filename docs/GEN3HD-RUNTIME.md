@@ -161,6 +161,10 @@ warm-to-cool light sweep across the map, and a very small low-frequency value
 noise break-up. A directional sun and cool camera-side fill supply real-time
 shadows for meshes; the authored albedo remains the dominant colour.
 
+Ledge behaviors (`MB_JUMP_*`) get a low 0.4-unit step and a soft contact strip
+on the jump-down side, so a flat route reads as a walkable ledge instead of a
+painted line. The step is presentation-only; collision is unchanged.
+
 ### Cards
 
 Every tree, bush, flower and sprite is an upright alpha-cutout card. The card
@@ -208,7 +212,9 @@ The map edge is a cut-away diorama, not an infinite plane:
   replace the flat black void. The void is never tiled with a generated field.
 
 The default `classic` framing includes the whole cliff, so the island reads as
-a complete object rather than a slab cropped at the screen edge.
+a complete object rather than a slab cropped at the screen edge. A soft
+sun/moon disc with a halo sits in the stage sky, camera-attached and behind the
+island, so the diorama has a light source without becoming a landscape.
 
 ### Post
 

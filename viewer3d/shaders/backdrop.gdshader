@@ -3,7 +3,8 @@ render_mode unshaded, cull_disabled, depth_draw_never, fog_disabled;
 
 // Camera-attached gradient stage.  A deep vertical gradient plus a soft warm
 // pool behind the diorama replaces the flat black void without tiling or
-// inventing a background field.  Ordered dithering kills gradient banding.
+// inventing a background field.  Keep it smooth: a hash dither at these very
+// low linear values becomes visible patchwork after sRGB encoding.
 
 uniform vec4 top_color = vec4(0.012, 0.016, 0.026, 1.0);
 uniform vec4 bottom_color = vec4(0.035, 0.06, 0.075, 1.0);

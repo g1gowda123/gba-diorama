@@ -17,6 +17,8 @@ uniform float shadow_strength : hint_range(0.0, 1.0) = 0.55;
 uniform vec4 shadow_tint : source_color = vec4(0.66, 0.76, 0.96, 1.0);
 uniform float variation : hint_range(0.0, 0.2) = 0.045;
 uniform float detail_scale = 7.0;
+uniform vec3 wash_warm = vec3(1.035, 1.005, 0.955);
+uniform vec3 wash_cool = vec3(0.955, 0.985, 1.035);
 uniform float map_width = 20.0;
 
 varying vec3 world_pos;
@@ -52,7 +54,7 @@ void fragment() {
 	// A gentle warm-to-cool wash across the map mirrors the side sun and
 	// gives the flat plane a readable light gradient.
 	float sweep = clamp(world_pos.x / max(map_width, 0.001), 0.0, 1.0);
-	col *= mix(vec3(1.035, 1.005, 0.955), vec3(0.955, 0.985, 1.035), sweep);
+	col *= mix(wash_warm, wash_cool, sweep);
 	col *= 1.0 + (noise - 0.5) * variation;
 	col *= 1.0 - ao * ao_strength;
 	// The baked silhouette shadow is cool and soft, like skylight.

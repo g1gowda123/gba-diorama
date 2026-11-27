@@ -17,6 +17,8 @@ uniform vec2 sun_dir = vec2(-0.68, -0.74);
 uniform float alpha_cut : hint_range(0.0, 1.0) = 0.5;
 uniform bool use_alpha = true;
 uniform bool flip_x = false;
+uniform vec3 sun_tint = vec3(1.04, 1.00, 0.94);
+uniform vec3 shade_tint = vec3(0.84, 0.88, 1.00);
 uniform bool manual_time = false;
 uniform float time_value = 0.0;
 
@@ -53,8 +55,10 @@ void fragment() {
 	float edge = (use_alpha && outside < alpha_cut) ? 1.0 : 0.0;
 	vec3 col = c.rgb * tint.rgb;
 	col += rim_color.rgb * edge * rim_strength;
-	// The sun is on the left, so the right side of a card sits in shade.
-	col *= mix(0.84, 1.04, 1.0 - uv.x);
+	// The sun is on the left, so the right side of a card sits in shade.  The
+	// warm/cool pair comes from the time preset: it ties cards to the light
+	// without repainting the sprite.
+	col *= mix(shade_tint, sun_tint, 1.0 - uv.x);
 	// Contact darkening at the card base (UV.y == 0 is the bottom edge).
 	float base = 1.0 - smoothstep(0.0, 0.18, uv.y);
 	col *= 1.0 - base * base_shade;
