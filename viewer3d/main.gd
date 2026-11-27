@@ -1036,10 +1036,15 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 	var back_z := cz - depth
 	var mid_z := cz - depth * 0.5
 	var eave := clampi(int(obj.get("eave", texture.get_height() / 2)), 1, texture.get_height() - 1)
-	var wall_h: float = maxf(0.4, float(texture.get_height() - eave) / 16.0)
+	# The cutout includes whatever stands in front of the facade: a dark base
+	# line, flower beds, a sign.  Stretched over the whole wall those become a
+	# solid band at the house's foot, so stop the wall band above them.
+	var trim := _wall_floor_trim(texture, eave)
+	var band_h: int = maxi(texture.get_height() - eave - trim, 6)
+	var wall_h: float = maxf(0.4, float(band_h) / 16.0)
 	var roof_rise := clampf(float(eave) / 16.0 * 0.55, 0.6, 1.8)
 	var roof_style := String(obj.get("roof_style", "flat"))
-	var wall_color := _average_color(texture, Rect2i(0, eave, texture.get_width(), texture.get_height() - eave))
+	var wall_color := _average_color(texture, Rect2i(0, eave, texture.get_width(), band_h))
 	var dark_wall := wall_color * 0.72
 	var roof_tint: Color = preset["card_tint"]
 
@@ -1047,7 +1052,7 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 	# top.  This is what stops the facade's baked roof from being stretched
 	# across a flat lid.
 	var wall_tex := _opaque_region(
-		texture, Rect2i(0, eave, texture.get_width(), texture.get_height() - eave)
+		texture, Rect2i(0, eave, texture.get_width(), band_h)
 	)
 	var front_mat := _card_material(wall_tex, preset["card_tint"], false)
 	_add_face_quad(Vector2(w, wall_h), Vector3(cx, base_y + wall_h * 0.5 - 0.02, cz), Vector3.ZERO, front_mat)
@@ -1065,14 +1070,9 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 	_add_face_quad(Vector2(depth, wall_h), Vector3(cx - w * 0.5, base_y + wall_h * 0.5 - 0.02, mid_z), Vector3(0, 90, 0), side_left_mat)
 	_add_face_quad(Vector2(depth, wall_h), Vector3(cx + w * 0.5, base_y + wall_h * 0.5 - 0.02, mid_z), Vector3(0, 90, 0), side_right_mat)
 
-	# A darker foundation strip anchors the facade to the grass.
-	var foundation_mat := _flat_material(dark_wall * 0.62)
-	_add_face_quad(
-		Vector2(w, 0.16),
-		Vector3(cx, base_y + 0.06, cz + 0.012),
-		Vector3.ZERO,
-		foundation_mat
-	)
+	# No foundation strip: a flat band along the wall base read as a solid
+	# plinth that the mailbox appeared to be planted into.  The contact shadow
+	# and the wall's own bottom row anchor the facade instead.
 	if time_preset != "day":
 		_add_door_light(cx, base_y, cz)
 		var x_origin := float(obj["bbox"][0])
@@ -1233,6 +1233,46 @@ func _card_material(texture: Texture2D, tint: Color, use_alpha: bool) -> ShaderM
 	mat.set_shader_parameter("sun_tint", preset.get("card_sun", Color(1.04, 1.0, 0.94)))
 	mat.set_shader_parameter("shade_tint", preset.get("card_shade", Color(0.84, 0.88, 1.0)))
 	return mat
+
+
+func _wall_floor_trim(texture: Texture2D, eave: int) -> int:
+	# Walk up from the bottom of the cutout while the rows are not wall: a
+	# dark base line, foliage from a flower bed, or mostly transparent.  The
+	# cap keeps a house whose whole lower half is foliage from losing its wall.
+	var image := texture.get_image()
+	if image == null:
+		return 0
+	image.convert(Image.FORMAT_RGBA8)
+	var h := image.get_height()
+	var w := image.get_width()
+	var trim := 0
+	for y in range(h - 1, eave, -1):
+		var solid := 0
+		var green := 0
+		var lum := 0.0
+		for x in range(w):
+			var c := image.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			solid += 1
+			lum += c.get_luminance()
+			if c.g > c.r * 1.08 and c.g > c.b * 1.08:
+				green += 1
+		if solid == 0:
+			trim += 1
+			continue
+		var mean_lum := lum / float(solid)
+		var green_share := float(green) / float(solid)
+		var coverage := float(solid) / float(w)
+		if green_share > 0.35 or mean_lum < 0.34 or coverage < 0.45:
+			trim += 1
+			# Never take more than 45% of the band: a house whose lower half is
+			# garden still needs a wall.
+			if trim >= int(float(h - eave) * 0.45):
+				break
+		else:
+			break
+	return trim
 
 
 func _opaque_region(texture: Texture2D, region: Rect2i) -> ImageTexture:
