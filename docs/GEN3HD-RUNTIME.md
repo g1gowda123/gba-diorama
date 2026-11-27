@@ -95,6 +95,15 @@ godot --path viewer3d -- \
     --shot="$PWD/out/littleroot-night.png" \
     --size=1600x900 --camera=classic --buildings=mesh --time=night --no-dof
 
+# camera-sway turntable: 90 frames spanning 14 degrees, for a preview loop
+godot --path viewer3d -- \
+    --world="$PWD/out/gen3hd-world" \
+    --size=800x450 --camera=classic --no-dof \
+    --turntable=90 --turntable-dir="$PWD/out/preview-frames" --turntable-arc=14
+ffmpeg -framerate 30 -i out/preview-frames/frame_%04d.png \
+    -c:v libx264 -pix_fmt yuv420p -crf 18 docs/images/gen3hd-preview.mp4
+# or one shot: tools/render-preview.sh out/gen3hd-world
+
 # re-bake AO/shadows after tuning, without a live session
 .venv/bin/python tools/rebake_presentation.py out/gen3hd-world out/gen3hd-littleroot
 
@@ -129,6 +138,9 @@ Attach to an already-running session by dropping `--boot` and matching
 | `--no-shadows` | disable real-time shadows (baked ground overlays remain) |
 | `--focus=x,z` | focus override in map tiles |
 | `--pitch=`, `--yaw=`, `--distance=` | camera overrides |
+| `--turntable=N` | render N frames while the camera sways, then exit |
+| `--turntable-dir=<dir>` | output directory for turntable PNGs |
+| `--turntable-arc=<deg>` | total sway angle in degrees (default 12) |
 | `--letterbox` | add cinematic bars |
 | `--no-dither` / `--force-dither` | player-behind-object dither control |
 
@@ -174,6 +186,9 @@ builds:
 - a pitched roof from the authored roof band, with an overhang and ridge;
 - gable ends and a foundation strip;
 - a door light pool and a warm point light after dark;
+- warm window glows after dark: `detect_windows()` finds compact blue-glass
+  components in the authored wall band, so lit windows are structural rather
+  than hardcoded;
 - contact and real-time shadows.
 
 Arbitrary romhack buildings still work because the eave, width, height and

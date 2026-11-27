@@ -32,6 +32,13 @@ var focus_override := Vector2(-1.0, -1.0)
 var pitch_override := -1.0
 var yaw_override := -1000.0
 var distance_override := -1.0
+var turntable_frames := 0
+var turntable_dir := ""
+var turntable_arc := 12.0
+var camera_center := Vector3.ZERO
+var camera_distance := 0.0
+var camera_base_yaw := 0.0
+var camera_pitch := 0.0
 var debug_shadow := false
 var sun_x_override := 1000.0
 var sun_y_override := 1000.0
@@ -62,13 +69,17 @@ var dither_ghost: MeshInstance3D
 var shadow_dir := Vector3(0.6, 0.0, 0.8)
 var preset: Dictionary = {}
 var sway_amount := 0.0
+var sway_materials: Array[ShaderMaterial] = []
 
 
 func _ready() -> void:
 	_parse_args()
 	if shot_path != "":
-		# Stills must be reproducible: no wind phase drift between runs.
+		# Stills must be reproducible: no wind phase drift.
 		sway_amount = 0.0
+	elif turntable_dir != "":
+		# The turntable drives a deterministic clock so the loop stays smooth.
+		sway_amount = 0.014
 	elif sway_enabled:
 		sway_amount = 0.018
 	if world_dir == "":
@@ -125,7 +136,9 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
-	if shot_path != "":
+	if turntable_frames > 0 and turntable_dir != "":
+		await _render_turntable()
+	elif shot_path != "":
 		var source := render_viewport if render_viewport != null else get_viewport()
 		var image := source.get_texture().get_image()
 		image.save_png(shot_path)
@@ -199,6 +212,12 @@ func _parse_args() -> void:
 			yaw_override = float(arg.trim_prefix("--yaw="))
 		elif arg.begins_with("--distance="):
 			distance_override = float(arg.trim_prefix("--distance="))
+		elif arg.begins_with("--turntable="):
+			turntable_frames = int(arg.trim_prefix("--turntable="))
+		elif arg.begins_with("--turntable-dir="):
+			turntable_dir = arg.trim_prefix("--turntable-dir=")
+		elif arg.begins_with("--turntable-arc="):
+			turntable_arc = float(arg.trim_prefix("--turntable-arc="))
 		elif arg.begins_with("--sun-x="):
 			sun_x_override = float(arg.trim_prefix("--sun-x="))
 		elif arg.begins_with("--sun-y="):
@@ -221,7 +240,7 @@ func _apply_window_size() -> void:
 
 
 func _create_stage() -> void:
-	if shot_path == "":
+	if shot_path == "" and turntable_dir == "":
 		stage = self
 		return
 	render_viewport = SubViewport.new()
@@ -692,6 +711,9 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 	)
 	if time_preset != "day":
 		_add_door_light(cx, base_y, cz)
+		var x_origin := float(obj["bbox"][0])
+		for window_box in obj.get("windows", []):
+			_add_window_glow(window_box, texture, x_origin, base_y, cz + 0.03)
 
 	var roof_tex := _opaque_region(
 		texture, Rect2i(0, 0, texture.get_width(), eave)
@@ -952,6 +974,10 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 		mat.set_shader_parameter("rim_color", Color(1.0, 0.80, 0.50))
 		mat.set_shader_parameter("base_shade", 0.30 if base_shade_override < 0.0 else base_shade_override)
 		mat.set_shader_parameter("sway_amount", sway_amount if allow_sway else 0.0)
+		if allow_sway and sway_amount > 0.0 and turntable_dir != "":
+			mat.set_shader_parameter("manual_time", true)
+			mat.set_shader_parameter("time_value", 0.0)
+			sway_materials.append(mat)
 		mat.set_shader_parameter("flip_x", flip)
 		override_mat = mat
 	var instance := MeshInstance3D.new()
@@ -1006,6 +1032,29 @@ func _add_contact_shadow_quad(center: Vector3, width: float, length: float, opac
 	stage.add_child(instance)
 
 
+func _render_turntable() -> void:
+	DirAccess.make_dir_recursive_absolute(turntable_dir)
+	var arc := deg_to_rad(turntable_arc)
+	for index in range(turntable_frames):
+		var phase := TAU * float(index) / float(turntable_frames)
+		var yaw := camera_base_yaw + arc * 0.5 * sin(phase)
+		camera_node.position = camera_center + Vector3(
+			sin(yaw) * cos(camera_pitch),
+			sin(camera_pitch),
+			cos(yaw) * cos(camera_pitch)
+		) * camera_distance
+		camera_node.look_at(camera_center + Vector3(0.0, -0.20, 0.0), Vector3.UP)
+		var sway_clock := TAU / 1.25 * float(index) / float(turntable_frames)
+		for material in sway_materials:
+			material.set_shader_parameter("time_value", sway_clock)
+		await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var source := render_viewport if render_viewport != null else get_viewport()
+		var image := source.get_texture().get_image()
+		image.save_png(turntable_dir.path_join("frame_%04d.png" % index))
+	print("wrote ", turntable_frames, " turntable frames to ", turntable_dir)
+
+
 func _setup_camera() -> void:
 	var center := Vector3(map_w * 0.5, 0.45, map_h * 0.5)
 	var yaw := deg_to_rad(16.0)
@@ -1028,6 +1077,10 @@ func _setup_camera() -> void:
 			sin(classic_pitch),
 			cos(classic_yaw) * cos(classic_pitch)
 		) * distance
+		camera_center = center
+		camera_distance = distance
+		camera_base_yaw = classic_yaw
+		camera_pitch = classic_pitch
 		stage.add_child(camera)
 		camera.look_at(center + Vector3(0.0, -0.20, 0.0), Vector3.UP)
 	elif camera_mode == "map":
@@ -1275,6 +1328,54 @@ func _grass_fringe_texture(seed: int) -> ImageTexture:
 		for y in range(2, 2 + length):
 			if y < height:
 				image.set_pixel(x, y, shade)
+	return ImageTexture.create_from_image(image)
+
+
+func _add_window_glow(window_box: Array, texture: Texture2D, x_origin: float, base_y: float, front_z: float) -> void:
+	if window_box.size() < 4:
+		return
+	var wx0 := float(window_box[0])
+	var wy0 := float(window_box[1])
+	var wx1 := float(window_box[2])
+	var wy1 := float(window_box[3])
+	var centre_x := (x_origin + (wx0 + wx1) * 0.5) / 16.0
+	var centre_y := base_y + (float(texture.get_height()) - (wy0 + wy1) * 0.5) / 16.0
+	var size := Vector2(
+		maxf(0.2, (wx1 - wx0) / 16.0 * 1.25),
+		maxf(0.2, (wy1 - wy0) / 16.0 * 1.25)
+	)
+	var quad := QuadMesh.new()
+	quad.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = _soft_rect_texture()
+	mat.albedo_color = Color(2.2, 1.25, 0.45, 0.62)
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.billboard_keep_scale = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	var glow := MeshInstance3D.new()
+	glow.mesh = quad
+	glow.material_override = mat
+	glow.position = Vector3(centre_x, centre_y, front_z)
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(glow)
+
+
+func _soft_rect_texture() -> ImageTexture:
+	var size := 32
+	var image := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in range(size):
+		for x in range(size):
+			var edge := minf(
+				minf(float(x), float(size - 1 - x)),
+				minf(float(y), float(size - 1 - y))
+			)
+			var alpha := clampf(edge / 3.0, 0.0, 1.0)
+			image.set_pixel(x, y, Color(1, 1, 1, alpha))
 	return ImageTexture.create_from_image(image)
 
 

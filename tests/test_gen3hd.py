@@ -11,6 +11,7 @@ from gen3hd.world import (
     annotate_buildings,
     bake_ground_ao,
     bake_ground_shadow,
+    detect_windows,
     discover_objects,
     repair_ground,
     sanitize_elevation,
@@ -178,6 +179,21 @@ def test_annotate_buildings_finds_eave_and_roof_style() -> None:
     assert small.depth > 2.0
     assert large.roof_style == "flat"
     assert large.depth > 2.0
+
+
+def test_detect_windows_finds_blue_glass_rectangles() -> None:
+    texture = _building_texture(96, 64, 39, tapered=False)
+    texture[46:54, 20:30, :3] = (40, 70, 120)
+    assert detect_windows(texture, 39) == [(20, 46, 30, 54)]
+    assert detect_windows(_building_texture(96, 64, 39, False), 39) == []
+
+    house = WorldObject(
+        asset_id="house", kind="building", bbox=(16, 0, 112, 64),
+        footprint=(16, 0, 112, 64), anchor=(64, 64),
+        elevation=3, texture=texture,
+    )
+    annotate_buildings([house])
+    assert house.windows == [(20, 46, 30, 54)]
 
 
 def test_baked_ground_ao_and_shadow_are_directional() -> None:

@@ -38,6 +38,11 @@ The same world at night, with window and doorway light and a cooler grade:
 
 ![Littleroot Town at night](docs/images/gen3hd-littleroot-night.png)
 
+The diorama in motion — a 14° camera sway makes the card depth, cast shadows
+and floating slab read in a way a still cannot ([MP4](docs/images/gen3hd-preview.mp4)):
+
+![Animated diorama preview](docs/images/gen3hd-preview.gif)
+
 When the player is behind a tree or building, a dithered silhouette is drawn
 through the occluder (`T` toggles it; `--no-dither` disables it):
 

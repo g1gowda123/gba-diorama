@@ -17,14 +17,17 @@ uniform vec2 sun_dir = vec2(-0.68, -0.74);
 uniform float alpha_cut : hint_range(0.0, 1.0) = 0.5;
 uniform bool use_alpha = true;
 uniform bool flip_x = false;
+uniform bool manual_time = false;
+uniform float time_value = 0.0;
 
 void vertex() {
 	if (sway_amount > 0.0001) {
 		vec3 origin = MODEL_MATRIX[3].xyz;
 		float phase = dot(origin, vec3(12.9898, 78.233, 37.719));
 		float top = clamp(UV.y, 0.0, 1.0);
-		VERTEX.x += sin(TIME * 1.25 + phase) * sway_amount * top;
-		VERTEX.z += cos(TIME * 0.95 + phase * 0.71) * sway_amount * 0.35 * top;
+		float t = manual_time ? time_value : TIME;
+		VERTEX.x += sin(t * 1.25 + phase) * sway_amount * top;
+		VERTEX.z += cos(t * 0.95 + phase * 0.71) * sway_amount * 0.35 * top;
 	}
 	if (billboard) {
 		MODELVIEW_MATRIX = VIEW_MATRIX * mat4(

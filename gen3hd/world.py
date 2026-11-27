@@ -64,6 +64,7 @@ class WorldObject:
     eave: int = 0
     roof_style: str = "flat"
     depth: float = 0.0
+    windows: list[tuple[int, int, int, int]] = field(default_factory=list)
 
     @property
     def width(self) -> int:
@@ -150,6 +151,7 @@ class WorldModel:
                     "eave": obj.eave,
                     "roof_style": obj.roof_style,
                     "depth": obj.depth,
+                    "windows": [list(box) for box in obj.windows],
                 }
                 for obj in self.objects
             ],
@@ -848,6 +850,46 @@ def bake_ground_shadow(
     return out
 
 
+def detect_windows(texture: np.ndarray, eave: int) -> list[tuple[int, int, int, int]]:
+    """Find compact blue-glass rectangles in a building's wall band.
+
+    The GBA art uses a distinct dark-blue palette for window glass.  This is a
+    structural heuristic on the authored texture, not a window sprite table:
+    connected blue components with a plausible window size and fill.  It is
+    used only for the night window glow.
+    """
+
+    height, width = texture.shape[:2]
+    if height <= eave + 4:
+        return []
+    band = texture[eave:, :, :3].astype(np.int16)
+    alpha = texture[eave:, :, 3]
+    r, g, b = band[..., 0], band[..., 1], band[..., 2]
+    mask = (b > r + 8) & (b > g + 4) & (b < 220) & (alpha > 200)
+    if not mask.any():
+        return []
+    boxes: list[tuple[int, int, int, int]] = []
+    for cells in _components(mask):
+        ys = [cell[1] for cell in cells]
+        xs = [cell[0] for cell in cells]
+        x0, x1 = min(xs), max(xs) + 1
+        y0, y1 = min(ys), max(ys) + 1
+        box_width = x1 - x0
+        box_height = y1 - y0
+        area = len(cells)
+        if area < 20 or box_width < 5 or box_height < 5:
+            continue
+        if not (4 <= box_width <= 40 and 4 <= box_height <= 32):
+            continue
+        if area / float(box_width * box_height) < 0.45:
+            continue
+        if not (0.35 <= box_width / float(box_height) <= 2.8):
+            continue
+        boxes.append((x0, y0 + eave, x1, y1 + eave))
+    boxes.sort(key=lambda box: (box[0], box[1]))
+    return boxes
+
+
 def annotate_buildings(objects: list[WorldObject]) -> None:
     """Split each building card into wall/roof bands and give it depth."""
 
@@ -876,6 +918,7 @@ def annotate_buildings(objects: list[WorldObject]) -> None:
         top_ratio = float(top_rows[: min(4, top_rows.size)].mean()) / full_width
         obj.roof_style = "gable" if top_ratio < 0.92 else "flat"
         obj.depth = max(2.0, min(width / 16.0 * 0.75, 4.5))
+        obj.windows = detect_windows(obj.texture, obj.eave)
 
 
 # ---------------------------------------------------------------------------
