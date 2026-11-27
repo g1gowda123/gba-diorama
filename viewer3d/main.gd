@@ -758,16 +758,13 @@ func _add_building(obj: Dictionary, texture: Texture2D, w: float, h: float, cx: 
 	var back_mat := _flat_material(dark_wall)
 	_add_face_quad(Vector2(w, wall_h), Vector3(cx, base_y + wall_h * 0.5 - 0.02, back_z), Vector3.ZERO, back_mat)
 
-	var side_left_tex := _opaque_region(
-		texture, Rect2i(0, eave, 16, texture.get_height() - eave)
-	)
-	var side_right_tex := _opaque_region(
-		texture, Rect2i(texture.get_width() - 16, eave, 16, texture.get_height() - eave)
-	)
-	var side_tint := wall_color * 1.08
-	side_tint.a = 1.0
-	var side_left_mat := _card_material(side_left_tex, side_tint, false)
-	var side_right_mat := _card_material(side_right_tex, side_tint, false)
+	# Side walls are generated siding, not a 16 px strip of the facade
+	# stretched across the depth: stretching smeared the pixels into vertical
+	# streaks.  The siding keeps the facade's average colour, so the two walls
+	# still read as one building.
+	var siding_seed := int(obj.get("id", "0").hash()) & 0xFFFF
+	var side_left_mat := _card_material(_siding_texture(wall_color, siding_seed), preset["card_tint"], false)
+	var side_right_mat := _card_material(_siding_texture(wall_color, siding_seed + 7), preset["card_tint"], false)
 	_add_face_quad(Vector2(depth, wall_h), Vector3(cx - w * 0.5, base_y + wall_h * 0.5 - 0.02, mid_z), Vector3(0, 90, 0), side_left_mat)
 	_add_face_quad(Vector2(depth, wall_h), Vector3(cx + w * 0.5, base_y + wall_h * 0.5 - 0.02, mid_z), Vector3(0, 90, 0), side_right_mat)
 
@@ -837,7 +834,7 @@ func _add_door_light(cx: float, base_y: float, cz: float) -> void:
 	# doorway at dusk.  It is deliberately small: the pixel art still carries
 	# the facade.
 	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(cx, base_y + 0.55, cz + 0.65)
+	lamp.position = Vector3(cx + 0.46, base_y + 1.02, cz + 0.30)
 	lamp.light_color = Color(1.0, 0.60, 0.28)
 	lamp.light_energy = 2.4
 	lamp.omni_range = 4.2
@@ -884,6 +881,7 @@ func _add_door_light(cx: float, base_y: float, cz: float) -> void:
 	glow.position = Vector3(cx, base_y + 0.34, cz + 0.04)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(glow)
+	_add_lantern(Vector3(cx + 0.46, base_y + 1.02, cz + 0.04))
 
 	# A wider, fainter wash tints the facade around the doorway.  The wall
 	# material is unshaded, so this additive card is what sells the spill.
@@ -1509,6 +1507,72 @@ func _add_window_glow(window_box: Array, texture: Texture2D, x_origin: float, ba
 	glow.position = Vector3(centre_x, centre_y, front_z)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(glow)
+
+
+func _siding_texture(base: Color, seed: int) -> ImageTexture:
+	# Side walls get generated lap siding instead of a 16 px slice of the
+	# facade stretched over the depth, which smeared into vertical streaks.
+	# Seams and board shadows are sized to the wall, so texel density matches
+	# the front and the two faces read as one building.
+	var w := 24
+	var h := 32
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var plank := Color(base.r * 0.94, base.g * 0.92, base.b * 0.86, 1.0)
+	for y in range(h):
+		for x in range(w):
+			var c := plank
+			var jitter := rng.randf_range(-0.035, 0.035)
+			c = Color(c.r + jitter, c.g + jitter * 0.9, c.b + jitter * 0.8, 1.0)
+			if x % 6 == 0:
+				c = c.darkened(0.18)
+			elif x % 6 == 1:
+				c = c.lightened(0.06)
+			if y % 8 == 0:
+				c = c.darkened(0.12)
+			c.a = 1.0
+			img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
+
+
+func _add_lantern(pos: Vector3) -> void:
+	# A bracket and a small lit lamp so the warm pool on the grass has a
+	# visible source; without it the spill reads as light from nowhere.
+	var brass := _flat_material(Color(0.20, 0.14, 0.07))
+	var arm := MeshInstance3D.new()
+	var arm_box := BoxMesh.new()
+	arm_box.size = Vector3(0.05, 0.05, 0.20)
+	arm.mesh = arm_box
+	arm.material_override = brass
+	arm.position = pos + Vector3(0.0, 0.15, 0.10)
+	arm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(arm)
+
+	var body := MeshInstance3D.new()
+	var body_box := BoxMesh.new()
+	body_box.size = Vector3(0.20, 0.26, 0.16)
+	body.mesh = body_box
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(1.0, 0.80, 0.46)
+	glass.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glass.emission_enabled = true
+	glass.emission = Color(1.0, 0.66, 0.28)
+	glass.emission_energy_multiplier = 2.4
+	body.material_override = glass
+	body.position = pos + Vector3(0.0, 0.0, 0.12)
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(body)
+
+	for dy in [0.15, -0.15]:
+		var cap := MeshInstance3D.new()
+		var cap_box := BoxMesh.new()
+		cap_box.size = Vector3(0.25, 0.04, 0.20)
+		cap.mesh = cap_box
+		cap.material_override = brass
+		cap.position = pos + Vector3(0.0, dy, 0.12)
+		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		stage.add_child(cap)
 
 
 func _soft_rect_texture() -> ImageTexture:
