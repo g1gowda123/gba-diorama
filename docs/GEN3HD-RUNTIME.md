@@ -114,6 +114,32 @@ tools/render-showcase.sh
 Attach to an already-running session by dropping `--boot` and matching
 `--session`.
 
+### Live link
+
+A compiled world is static for one map; the camera scroll and the OAM sprite
+table are what change. `gen3hd live` publishes those to `live.json` beside
+`world.json` and the viewer polls it, so sprites walk on the diorama while the
+emulator runs.
+
+```bash
+# publish at 10 Hz, 6 emulator frames per update, walking west
+.venv/bin/python -m gen3hd live \
+    --rom "Pokemon - Emerald Version (USA, Europe).gba" \
+    --world="$PWD/out/gen3hd-world" --interval 0.1 --frames 6 --walk west
+
+# view the live world with a camera that follows the player
+godot --path viewer3d -- --world="$PWD/out/gen3hd-world" \
+    --live="$PWD/out/gen3hd-world/live.json" --camera=play --follow
+```
+
+The link reads only OAM and the I/O registers per tick (two host calls), which
+is what makes a usable rate possible: re-reading VRAM and re-cropping every
+sprite each frame is far too slow and is not done. Sprite *textures* therefore
+stay those of the captured frame, and only OAM slots present in `world.json`
+are moved (a stale OAM entry cannot be proven empty without decoding its
+tiles). `--walk` is a convenience for demos; without it the link steps frames
+and an interactive session or playtest window drives the game.
+
 ### Viewer flags
 
 | Flag | Meaning |
@@ -136,6 +162,8 @@ Attach to an already-running session by dropping `--boot` and matching
 | `--no-cliff-detail` | hide the grass fringe, vines, rocks and shards |
 | `--no-particles` | hide drifting motes |
 | `--no-shadows` | disable real-time shadows (baked ground overlays remain) |
+| `--live=<json>` | poll a `gen3hd live` feed and move the sprite billboards |
+| `--follow` | keep the `play`/`hero` camera on the live player sprite |
 | `--focus=x,z` | focus override in map tiles |
 | `--pitch=`, `--yaw=`, `--distance=` | camera overrides |
 | `--turntable=N` | render N frames while the camera sways, then exit |
@@ -279,9 +307,10 @@ now.
 
 ## Current limitations
 
-- The Godot viewer renders a **compiled snapshot**, not the live emulator
-  window yet. The next step is a stream loop: `romdev` frame → updated
-  sprites/OAM → Godot.
+- The Godot viewer renders a **compiled snapshot**; the live link moves only
+  OAM sprites and the camera. A map change (new layout/tileset) still needs a
+  new `capture`, and sprite textures stay frozen at the captured frame until
+  the link can take a tile stream.
 - The default `classic` camera is a fixed raised perspective framing the whole
   island and its cliff. `--camera=map` is an inspection view; `--camera=hero`
   and `--camera=play` are scenic/gameplay cameras that crop the map.

@@ -302,7 +302,11 @@ on real scrolling scenes before replacing the temporary sparse-overlay skip.
   distance/pitch/yaw.
 - Trigger-file dump capture, a desktop-GL launcher, and BG/OBJ orientation
   handling for the mGBA patch.
-- Deterministic CLI and 58 tests.
+- A live link: `gen3hd live` publishes the OAM sprite table and scroll to
+  `live.json` at 10 Hz, and the viewer moves its sprite billboards and can
+  follow the player, so the diorama animates while the emulator runs. Terrain
+  and sprite textures still come from the compiled capture.
+- Deterministic CLI and 77 tests.
 
 ## What is not done yet
 

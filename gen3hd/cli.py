@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .gen3.rom import Gen3Rom
 from .host import DEFAULT_BASE, DEFAULT_SESSION, RomdevHost
+from .live import LiveLink
 from .world import compile_world
 
 
@@ -32,6 +33,39 @@ def _capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def _live(args: argparse.Namespace) -> int:
+    rom = Gen3Rom.from_path(args.rom)
+    world_dir = Path(args.world)
+    manifest = json.loads((world_dir / "world.json").read_text())
+    map_info = manifest["map"]
+    # Only slots the compiled world knows: a stale OAM entry cannot be proven
+    # empty without decoding its tiles, and the viewer has no billboard for it.
+    allowed = {
+        int(sprite["oam"])
+        for sprite in manifest.get("sprites", [])
+        if int(sprite.get("oam", -1)) >= 0
+    }
+    host = RomdevHost(args.base, args.session)
+    host.wait_ready()
+    if args.boot:
+        host.boot_to_overworld(args.save, args.rom)
+    link = LiveLink(
+        host,
+        world_dir,
+        int(map_info["pixel_width"]),
+        int(map_info["pixel_height"]),
+        interval=args.interval,
+        frames=args.frames,
+        walk=args.walk,
+        allowed=allowed,
+    )
+    target = (world_dir / "live.json").resolve()
+    print(f"live: publishing {target} at {1.0 / max(args.interval, 1e-3):.0f} Hz")
+    ticks = link.run(args.seconds)
+    print(f"live: {ticks} ticks, frame {host.frame_count}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gen3hd")
     parser.add_argument("--base", default=DEFAULT_BASE)
@@ -45,6 +79,18 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--boot", action="store_true", help="load ROM+save and drive the title menu")
     capture.add_argument("--screenshot", default="")
     capture.set_defaults(func=_capture)
+
+    live = sub.add_parser("live", help="stream sprite positions into a compiled world")
+    live.add_argument("--rom", required=True)
+    live.add_argument("--world", required=True, help="compiled world directory")
+    live.add_argument("--save", default="")
+    live.add_argument("--session", default=DEFAULT_SESSION)
+    live.add_argument("--boot", action="store_true", help="load ROM+save and drive the title menu")
+    live.add_argument("--interval", type=float, default=0.1, help="seconds between updates")
+    live.add_argument("--frames", type=int, default=6, help="emulator frames per update")
+    live.add_argument("--seconds", type=float, default=0.0, help="0 = run until interrupted")
+    live.add_argument("--walk", default="", help="hold this direction (up/down/left/right)")
+    live.set_defaults(func=_live)
 
     return parser
 

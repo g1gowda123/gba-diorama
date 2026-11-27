@@ -82,6 +82,10 @@ class SpriteBillboard:
     screen: tuple[int, int]
     world: tuple[int, int]
     priority: int
+    # OAM slot.  The live link keys on it because it is stable while the
+    # asset_id list index is not: a sprite appearing or disappearing shifts
+    # every id after it.
+    oam: int = -1
 
 
 @dataclass(slots=True)
@@ -161,6 +165,7 @@ class WorldModel:
                     "screen": list(spr.screen),
                     "world": list(spr.world),
                     "priority": spr.priority,
+                    "oam": spr.oam,
                     "texture": f"sprites/{spr.asset_id}.png",
                 }
                 for spr in self.sprites
@@ -950,6 +955,7 @@ def build_sprites(
                 screen=(sprite.x, sprite.y),
                 world=(int(world_x), int(world_y)),
                 priority=sprite.priority,
+                oam=sprite.index,
             )
         )
     # The player is the visible sprite nearest the screen centre.

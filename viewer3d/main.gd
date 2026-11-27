@@ -29,6 +29,11 @@ var dither_enabled := true
 var force_dither := false
 var sway_enabled := true
 var focus_override := Vector2(-1.0, -1.0)
+var live_path := ""
+var follow_player := false
+var live_timer: Timer = null
+var sprite_nodes: Array = []
+var play_cam := {}
 var pitch_override := -1.0
 var yaw_override := -1000.0
 var distance_override := -1.0
@@ -121,6 +126,8 @@ func _ready() -> void:
 		_build_objects()
 		_build_sprites()
 	_setup_camera()
+	if live_path != "":
+		_start_live()
 	_add_backdrop()
 	_add_celestial()
 	if particles_enabled and turntable_dir == "":
@@ -132,6 +139,11 @@ func _ready() -> void:
 	_add_vignette()
 	if letterbox:
 		_add_letterbox()
+
+	# A still with a live feed should show the latest emulator frame, not the
+	# one baked into world.json.
+	if live_path != "":
+		_poll_live()
 
 	# Let the renderer draw the scene before reading the viewport.
 	await get_tree().process_frame
@@ -204,6 +216,10 @@ func _parse_args() -> void:
 			time_preset = arg.trim_prefix("--time=")
 		elif arg.begins_with("--grade="):
 			grade_mode = arg.trim_prefix("--grade=")
+		elif arg.begins_with("--live="):
+			live_path = arg.trim_prefix("--live=")
+		elif arg == "--follow":
+			follow_player = true
 		elif arg.begins_with("--focus="):
 			var parts := arg.trim_prefix("--focus=").split(",")
 			if parts.size() >= 2:
@@ -1020,14 +1036,21 @@ func _build_sprites() -> void:
 		var cz := (float(world[1]) + float(texture.get_height())) / 16.0
 		var base_y := _max_base_height(cx - w * 0.5, cz - h, cx + w * 0.5, cz)
 		var card_pos := Vector3(cx, base_y + h * 0.5 - 0.02, cz)
-		_add_billboard(texture, w, h, card_pos, preset["card_tint"], true, false, 1.0)
-		_add_soft_shadow(Vector3(cx, base_y + 0.012, cz - 0.08), w * 0.9, h, "sprite")
+		var inst := _add_billboard(texture, w, h, card_pos, preset["card_tint"], true, false, 1.0)
+		var shadow := _add_soft_shadow(Vector3(cx, base_y + 0.012, cz - 0.08), w * 0.9, h, "sprite")
+		sprite_nodes.append({
+			"oam": int(spr.get("oam", sprite_nodes.size())),
+			"node": inst,
+			"shadow": shadow,
+			"w": w,
+			"h": h,
+		})
 		var focus: Array = data.get("camera_focus", [])
 		if focus.size() >= 2 and int(world[0]) == int(focus[0]) and int(world[1]) == int(focus[1]):
 			player_info = {"pos": card_pos, "size": Vector2(w, h), "texture": texture}
 
 
-func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: Color, allow_sway: bool, flip: bool, scale: float, cast: bool = true) -> void:
+func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: Color, allow_sway: bool, flip: bool, scale: float, cast: bool = true) -> MeshInstance3D:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(w * scale, h * scale)
 	var override_mat: Material = null
@@ -1066,29 +1089,32 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 	instance.position = pos
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(instance)
+	return instance
 
 
-func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> void:
+func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> MeshInstance3D:
 	if shadow_tex == null or not shadows_enabled:
-		return
+		return null
 	var length := clampf(h * 0.45, 0.25, 2.4)
 	if kind == "building":
 		length = clampf(h * 0.9, 0.5, 3.2)
 	var width := w * (1.35 if kind == "tree" else 1.05)
 	var center := base + shadow_dir * (length * 0.50)
-	_add_contact_shadow_quad(center, width, length, 0.44 if kind != "sprite" else 0.46)
+	return _add_contact_shadow_quad(center, width, length, 0.44 if kind != "sprite" else 0.46)
 
 
-func _add_contact_shadow_quad(center: Vector3, width: float, length: float, opacity: float) -> void:
+func _add_contact_shadow_quad(center: Vector3, width: float, length: float, opacity: float) -> MeshInstance3D:
 	if shadow_tex == null or not shadows_enabled:
-		return
+		return null
+	# Geometry is built around the origin and the node is moved into place, so
+	# a live sprite can carry its shadow with it.
 	var right := Vector3(-shadow_dir.z, 0.0, shadow_dir.x)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var a := center - right * width * 0.5 - shadow_dir * length * 0.5
-	var b := center - right * width * 0.5 + shadow_dir * length * 0.5
-	var c := center + right * width * 0.5 + shadow_dir * length * 0.5
-	var d := center + right * width * 0.5 - shadow_dir * length * 0.5
+	var a := -right * width * 0.5 - shadow_dir * length * 0.5
+	var b := -right * width * 0.5 + shadow_dir * length * 0.5
+	var c := right * width * 0.5 + shadow_dir * length * 0.5
+	var d := right * width * 0.5 - shadow_dir * length * 0.5
 	st.set_normal(Vector3.UP)
 	st.set_uv(Vector2(0, 0)); st.add_vertex(a)
 	st.set_uv(Vector2(0, 1)); st.add_vertex(b)
@@ -1108,8 +1134,10 @@ func _add_contact_shadow_quad(center: Vector3, width: float, length: float, opac
 	var instance := MeshInstance3D.new()
 	instance.mesh = st.commit()
 	instance.material_override = mat
+	instance.position = center
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(instance)
+	return instance
 
 
 func _render_turntable() -> void:
@@ -1196,6 +1224,7 @@ func _setup_camera() -> void:
 		if distance_override > 0.0:
 			play_distance = distance_override
 		var play_fov := 40.0
+		play_cam = {"yaw": play_yaw, "pitch": play_pitch, "distance": play_distance}
 		camera.fov = play_fov
 		camera.position = focus + Vector3(
 			sin(play_yaw) * cos(play_pitch),
@@ -1667,6 +1696,94 @@ func _update_dither_visibility() -> void:
 				dither_ghost.visible = true
 				return
 	dither_ghost.visible = false
+
+
+func _start_live() -> void:
+	# Poll the live feed written by `gen3hd live`.  The compiled world stays
+	# fixed; only sprite billboards (and, with --follow, the play camera) move.
+	if not FileAccess.file_exists(live_path):
+		print("live: waiting for ", live_path)
+	live_timer = Timer.new()
+	live_timer.wait_time = 0.08
+	live_timer.autostart = true
+	live_timer.timeout.connect(_poll_live)
+	add_child(live_timer)
+	_poll_live()
+
+
+func _poll_live() -> void:
+	if live_path == "" or not FileAccess.file_exists(live_path):
+		return
+	var text := FileAccess.get_file_as_string(live_path)
+	if text.strip_edges() == "":
+		return
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var frame: Dictionary = parsed
+	var seen := {}
+	for entry in frame.get("sprites", []):
+		seen[int(entry.get("oam", -1))] = true
+		_apply_sprite_entry(entry)
+	for record in sprite_nodes:
+		var node: MeshInstance3D = record["node"]
+		var shadow = record.get("shadow")
+		var visible: bool = seen.has(int(record["oam"]))
+		node.visible = visible
+		if shadow != null:
+			shadow.visible = visible
+	if follow_player:
+		_follow_live_player(frame)
+
+
+func _sprite_record(oam: int) -> Dictionary:
+	for record in sprite_nodes:
+		if int(record["oam"]) == oam:
+			return record
+	return {}
+
+
+func _apply_sprite_entry(entry: Dictionary) -> void:
+	var record := _sprite_record(int(entry.get("oam", -1)))
+	if record.is_empty():
+		return
+	var world: Array = entry.get("world", [0, 0])
+	var w: float = record["w"]
+	var h: float = record["h"]
+	# Same transform as _build_sprites(): world pixels are the sprite's
+	# top-left, so the card centre sits half a sprite in from each corner.
+	var cx := float(world[0]) / 16.0 + w * 0.5
+	var cz := float(world[1]) / 16.0 + h
+	var base_y := _max_base_height(cx - w * 0.5, cz - h, cx + w * 0.5, cz)
+	var node: MeshInstance3D = record["node"]
+	node.position = Vector3(cx, base_y + h * 0.5 - 0.02, cz)
+	var shadow = record.get("shadow")
+	if shadow != null:
+		var length := clampf(h * 0.45, 0.25, 2.4)
+		var width := w * 0.9 * 1.05
+		shadow.position = Vector3(cx, base_y + 0.012, cz - 0.08) + shadow_dir * (length * 0.50)
+
+
+func _follow_live_player(frame: Dictionary) -> void:
+	if play_cam.is_empty() or camera_node == null:
+		return
+	var record := _sprite_record(int(frame.get("player", -1)))
+	if record.is_empty():
+		return
+	var node: MeshInstance3D = record["node"]
+	var fx := clampf(node.position.x, 5.5, float(map_w) - 5.5)
+	var fz := clampf(node.position.z, 5.0, float(map_h) - 5.0)
+	var fy := _cell_height(int(floor(fx)), int(floor(fz)))
+	var focus := Vector3(fx, fy + 0.35, fz)
+	var yaw: float = play_cam["yaw"]
+	var pitch: float = play_cam["pitch"]
+	var distance: float = play_cam["distance"]
+	camera_node.position = focus + Vector3(
+		sin(yaw) * cos(pitch),
+		sin(pitch),
+		cos(yaw) * cos(pitch)
+	) * distance
+	camera_node.look_at(focus + Vector3(0.0, 0.55, 0.0), Vector3.UP)
 
 
 func _process(_delta: float) -> void:
