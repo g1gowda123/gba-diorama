@@ -21,8 +21,12 @@ def _capture(args: argparse.Namespace) -> int:
     snapshot = host.snapshot()
     snapshot.title = rom.header.title
     snapshot.game_code = rom.header.game_code
-    world = compile_world(snapshot, rom)
+    world = compile_world(snapshot, rom, flat=args.flat)
     out = world.export(args.out)
+    if args.flat:
+        # Flat mode is a screen, not a map: keep the emulator's own frame so
+        # BG0 (dialogue, menus) and OAM sprites are in the card too.
+        host.screenshot(out / "screen.png")
     if args.screenshot:
         host.screenshot(args.screenshot)
     print(json.dumps(world.summary()["map"], indent=1))
@@ -77,6 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
     capture.add_argument("--save", default="")
     capture.add_argument("--session", default=DEFAULT_SESSION)
     capture.add_argument("--boot", action="store_true", help="load ROM+save and drive the title menu")
+    capture.add_argument(
+        "--flat", action="store_true",
+        help="treat the frame as a screen (battle/menu): one card, no 3D lifting",
+    )
     capture.add_argument("--screenshot", default="")
     capture.set_defaults(func=_capture)
 

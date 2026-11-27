@@ -31,6 +31,7 @@ var force_dither := false
 var sway_enabled := true
 var focus_override := Vector2(-1.0, -1.0)
 var live_path := ""
+var flat_mode := false
 var follow_player := false
 var live_timer: Timer = null
 var sprite_nodes: Array = []
@@ -126,7 +127,12 @@ func _ready() -> void:
 	map_h = int(data["map"]["height"])
 	heights = data["grids"]["elevation"]
 	behaviors = data["grids"]["behaviors"]
-	ground_tex = _load_texture(world_dir.path_join("ground.png"))
+	flat_mode = String(data.get("mode", "terrain")) == "flat"
+	# A flat world is one screen-sized card: the composite is the top face.
+	var frame_name := "ground.png"
+	if flat_mode:
+		frame_name = "screen.png" if FileAccess.file_exists(world_dir.path_join("screen.png")) else "composite.png"
+	ground_tex = _load_texture(world_dir.path_join(frame_name))
 	shadow_tex = _load_texture(world_dir.path_join("shadow.png"))
 	ao_tex = _load_texture_or_empty(world_dir.path_join("ao.png"))
 	ground_shadow_tex = _load_texture_or_empty(world_dir.path_join("shadow_ground.png"))
@@ -142,7 +148,7 @@ func _ready() -> void:
 		_add_cliff_detail()
 	if debug_shadow:
 		_add_shadow_probe()
-	if not debug_ground:
+	if not debug_ground and not flat_mode:
 		_build_objects()
 		_build_sprites()
 	_setup_camera()

@@ -107,6 +107,9 @@ class WorldModel:
     camera_focus: tuple[int, int] = (0, 0)
     player: SpriteBillboard | None = None
     header: str = ""
+    # "terrain" is a walkable field map; "flat" is a menu/battle frame that is
+    # shown as one screen-sized card instead of being lifted into 3D.
+    mode: str = "terrain"
 
     @property
     def pixel_width(self) -> int:
@@ -119,6 +122,7 @@ class WorldModel:
     def summary(self) -> dict:
         return {
             "format": "gen3hd-world-v1",
+            "mode": self.mode,
             "rom": {
                 "title": self.header,
                 "family": self.family.value,
@@ -973,7 +977,7 @@ def build_sprites(
 # ---------------------------------------------------------------------------
 
 
-def compile_world(state: GbaSnapshot, rom: Gen3Rom) -> WorldModel:
+def compile_world(state: GbaSnapshot, rom: Gen3Rom, flat: bool = False) -> WorldModel:
     located: LocatedMap = locate_map(state.iwram, state.ewram, rom)
     layout = located.layout
     composed = compose_layers(state, rom, layout)
@@ -982,25 +986,35 @@ def compile_world(state: GbaSnapshot, rom: Gen3Rom) -> WorldModel:
     composed["elevation"] = sanitize_elevation(
         composed["elevation"], composed["collision"]
     )
-    objects, clear_mask = discover_objects(
-        composite,
-        composed["metatile_ids"],
-        composed["collision"],
-        composed["elevation"],
-        composed["behaviors"],
-    )
-    ground = repair_ground(
-        composite,
-        clear_mask,
-        composed["collision"],
-        composed["metatile_ids"],
-    )
-    refine_object_alpha(objects, ground)
-    annotate_buildings(objects)
-    palette = decode_palette(state.palette)
-    oam = decode_oam(state.vram, state.oam, palette, state.io)
-    sprites, player = build_sprites(state, oam, layout.width * 16, layout.height * 16)
-    focus = player.world if player else (layout.width * 8, layout.height * 8)
+    if flat:
+        # A battle, menu or dialogue frame is a screen, not a place: lifting
+        # its tiles produces floating slabs and UI boxes.  Keep the composite
+        # as one card and let the viewer present it flat.
+        objects = []
+        ground = composite
+        sprites = []
+        player = None
+        focus = (layout.width * 8, layout.height * 8)
+    else:
+        objects, clear_mask = discover_objects(
+            composite,
+            composed["metatile_ids"],
+            composed["collision"],
+            composed["elevation"],
+            composed["behaviors"],
+        )
+        ground = repair_ground(
+            composite,
+            clear_mask,
+            composed["collision"],
+            composed["metatile_ids"],
+        )
+        refine_object_alpha(objects, ground)
+        annotate_buildings(objects)
+        palette = decode_palette(state.palette)
+        oam = decode_oam(state.vram, state.oam, palette, state.io)
+        sprites, player = build_sprites(state, oam, layout.width * 16, layout.height * 16)
+        focus = player.world if player else (layout.width * 8, layout.height * 8)
     return WorldModel(
         layout=layout,
         family=layout.family,
@@ -1019,4 +1033,5 @@ def compile_world(state: GbaSnapshot, rom: Gen3Rom) -> WorldModel:
         camera_focus=focus,
         player=player,
         header=rom.header.title,
+        mode="flat" if flat else "terrain",
     )

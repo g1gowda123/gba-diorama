@@ -163,7 +163,9 @@ class RomdevHost:
         """
 
         self.load(rom_path)
-        if Path(save_path).exists():
+        # An empty path is "no save": Path("") is "." on POSIX and would pass
+        # exists(), then fail reading a directory.
+        if str(save_path) and Path(save_path).is_file():
             self.import_sram(save_path)
         self.reset()
         self.step(2200)   # Game Freak / legendary intro

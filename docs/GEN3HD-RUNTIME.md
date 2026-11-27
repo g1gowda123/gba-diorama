@@ -114,6 +114,22 @@ tools/render-showcase.sh
 Attach to an already-running session by dropping `--boot` and matching
 `--session`.
 
+### Screens need flat mode
+
+A battle, menu or dialogue frame is a screen, not a place: lifting its tiles
+produces floating UI boxes and a one-tile floor. `--flat` keeps the emulator's
+own frame as one card, so BG0 (text boxes, menus) and OAM sprites are all in
+the picture:
+
+```bash
+.venv/bin/python -m gen3hd capture --rom game.gba --out out/screen \
+    --session gen3hd-live --flat
+godot --path viewer3d -- --world="$PWD/out/screen" --shot=/tmp/screen.png
+```
+
+The card sits on the same rim, soil and underside as a terrain world, and
+`world.json` records `"mode": "flat"` so nothing tries to re-lift it.
+
 ### Live link
 
 A compiled world is static for one map; the camera scroll and the OAM sprite
