@@ -1616,13 +1616,22 @@ func _add_cliff_detail() -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0x6E33D
-	var fringe_texture := _grass_fringe_texture(0x51A)
+	# Three variants break the visible repeat of a single fringe tile.
+	var fringe_textures := [
+		_grass_fringe_texture(0x51A),
+		_grass_fringe_texture(0x9C2),
+		_grass_fringe_texture(0x2F7),
+	]
+	var fringe_texture: Texture2D = fringe_textures[0]
 	if fringe_enabled:
 		# Front lip plus both side rims.  The sides used to be a bare
 		# grass-to-void line while the front was tufted, which read as two
 		# different objects.
 		var fringe_x := 0.0
+		var column := 0
 		while fringe_x < float(map_w):
+			fringe_texture = fringe_textures[column % fringe_textures.size()]
+			column += 1
 			_add_billboard(
 				fringe_texture, 1.0, 0.34,
 				Vector3(fringe_x + 0.5, -0.10, float(map_h) + 0.035),
@@ -1632,9 +1641,9 @@ func _add_cliff_detail() -> void:
 		# Side tufts are narrower and inset by half their width: a billboard
 		# always faces the camera, so one centred on the rim sticks out into
 		# the void as a floating green strip.
-		var fringe_z := 0.0
-		# Stop short of the front corner: the corner tuft is the one that
-		# creeps past the silhouette where the two rims meet.
+		var fringe_z := 0.9
+		# Inset from both corners: a side tuft near the corner doubles the
+		# front fringe where the two rims meet.
 		while fringe_z < float(map_h) - 0.9:
 			_add_billboard(
 				fringe_texture, 0.50, 0.26,
@@ -1699,6 +1708,29 @@ func _add_cliff_detail() -> void:
 			)
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			stage.add_child(instance)
+		# A few stones on the side faces too; the orthographic whole-map view
+		# sees them and a bare gradient face there read as a straight slice.
+		for side in [-1.0, 1.0]:
+			for index in range(3):
+				var rock := BoxMesh.new()
+				var size := 0.26 + rng.randf() * 0.26
+				rock.size = Vector3(size * 0.7, size * (0.6 + rng.randf() * 0.6), size)
+				var instance := MeshInstance3D.new()
+				instance.mesh = rock
+				instance.material_override = rock_mat
+				var edge_x := -0.035 if side < 0.0 else float(map_w) + 0.035
+				instance.position = Vector3(
+					edge_x,
+					-0.50 - rng.randf() * 0.95,
+					float(map_h) * (0.12 + rng.randf() * 0.76)
+				)
+				instance.rotation_degrees = Vector3(
+					rng.randf() * 24.0 - 12.0,
+					rng.randf() * 40.0 - 20.0,
+					rng.randf() * 30.0 - 15.0
+				)
+				instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				stage.add_child(instance)
 
 	if shards_enabled:
 		# A few shards under the slab sell the float, but they stay inside the
