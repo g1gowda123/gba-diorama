@@ -1600,7 +1600,10 @@ func _is_flat_art(texture: Texture2D) -> bool:
 		return false
 	var mean := total / float(count)
 	var variance: float = maxf(total_sq / float(count) - mean * mean, 0.0)
-	return mean > 0.50 and sqrt(variance) < 0.10
+	var spread := sqrt(variance)
+	# A single-colour tile is terrain (a wall top, a palette block), whatever
+	# its brightness: lifted, it is a flat rectangle with no art in it.
+	return spread < 0.06 or (mean > 0.50 and spread < 0.10)
 
 
 func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> MeshInstance3D:
