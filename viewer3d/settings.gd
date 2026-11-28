@@ -23,11 +23,11 @@ const DEFAULTS := {
 	"render": {
 		"dof": true,
 		"tilt_shift": true,
-		"vignette": true,
+		"vignette": false,
 		"bloom": true,
 		"ssao": true,
 		"fog": true,
-		"particles": true,
+		"particles": false,
 		"dither": true,
 		"sway": true,
 		"letterbox": false,
@@ -49,7 +49,7 @@ const DEFAULTS := {
 		"glow": true,
 	},
 	"lights": {
-		"celestial": true,  # sun/moon disc
+		"celestial": false,  # invented sun/moon disc; off to keep the frame
 		"door": true,       # warm doorway pool
 		"windows": true,    # lit windows at dusk/night
 		"lanterns": true,   # lantern fixture beside the door

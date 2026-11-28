@@ -8,11 +8,11 @@
   "render": {
     "dof": true,
     "tilt_shift": true,
-    "vignette": true,
+    "vignette": false,
     "bloom": true,
     "ssao": true,
     "fog": true,
-    "particles": true,
+    "particles": false,
     "dither": true,
     "sway": true,
     "letterbox": false
@@ -34,7 +34,7 @@
     "glow": true
   },
   "lights": {
-    "celestial": true,
+    "celestial": false,
     "door": true,
     "windows": true,
     "lanterns": true

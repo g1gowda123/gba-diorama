@@ -19,7 +19,7 @@ var render_size := Vector2i(1920, 1080)
 var debug_ground := false
 var shadows_enabled := true
 var dof_enabled := true
-var particles_enabled := true
+var particles_enabled := false
 var letterbox := false
 var tilt_shift := true
 var camera_mode := "classic"
@@ -64,7 +64,7 @@ var settings: Dictionary = {}
 # Fine-grained switches, all defaulting from settings.json.
 var contact_shadows := true
 var baked_shadows := true
-var vignette_enabled := true
+var vignette_enabled := false
 var fringe_enabled := true
 var vines_enabled := true
 var rocks_enabled := true
@@ -72,7 +72,7 @@ var shards_enabled := true
 var island_glow_enabled := true
 var island_rim_lip := true
 var island_underside := true
-var celestial_enabled := true
+var celestial_enabled := false
 var door_lights := true
 var window_lights := true
 var lanterns_enabled := true
@@ -141,35 +141,40 @@ func _ready() -> void:
 	ground_shadow_tex = _load_texture_or_empty(world_dir.path_join("shadow_ground.png"))
 
 	_setup_environment()
-	_setup_sun()
-	_build_terrain()
-	_add_ledge_shadows()
-	_add_rim_lip()
-	_add_underside()
-	_add_island_glow()
-	if cliff_detail and camera_mode in ["classic", "map"]:
-		_add_cliff_detail()
-	if debug_shadow:
-		_add_shadow_probe()
+	if flat_mode:
+		# A screen is shown as a screen: no slab, no rim, no stage dressing.
+		_build_flat_screen()
+	else:
+		_setup_sun()
+		_build_terrain()
+		_add_ledge_shadows()
+		_add_rim_lip()
+		_add_underside()
+		_add_island_glow()
+		if cliff_detail and camera_mode in ["classic", "map"]:
+			_add_cliff_detail()
+		if debug_shadow:
+			_add_shadow_probe()
 	if not debug_ground and not flat_mode:
 		if objects_enabled:
 			_build_objects()
 		if sprites_enabled:
 			_build_sprites()
-	_setup_camera()
-	if live_path != "":
-		_start_live()
-	_add_backdrop()
-	_add_celestial()
-	if particles_enabled and turntable_dir == "":
-		_add_motes()
-	_create_dither_ghost()
-	_update_dither_visibility()
-	if tilt_shift and camera_mode == "classic":
-		_add_tilt_shift()
-	_add_vignette()
-	if letterbox:
-		_add_letterbox()
+	if not flat_mode:
+		_setup_camera()
+		if live_path != "":
+			_start_live()
+		_add_backdrop()
+		_add_celestial()
+		if particles_enabled and turntable_dir == "":
+			_add_motes()
+		_create_dither_ghost()
+		_update_dither_visibility()
+		if tilt_shift and camera_mode == "classic":
+			_add_tilt_shift()
+		_add_vignette()
+		if letterbox:
+			_add_letterbox()
 
 	# A still with a live feed should show the latest emulator frame, not the
 	# one baked into world.json.
@@ -1662,6 +1667,39 @@ func _setup_camera() -> void:
 	camera_node = camera
 
 
+func _build_flat_screen() -> void:
+	# The frame is presented as the game shows it: upright, screen-aligned,
+	# unshaded, at the capture's aspect.  No lighting, no tilt, no slab.
+	var texture := ground_tex
+	if texture == null:
+		return
+	var aspect := float(texture.get_width()) / float(maxi(texture.get_height(), 1))
+	var card_h := 8.0
+	var card_w := card_h * aspect
+	var quad := QuadMesh.new()
+	quad.size = Vector2(card_w, card_h)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = texture
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var instance := MeshInstance3D.new()
+	instance.mesh = quad
+	instance.material_override = mat
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(instance)
+
+	var camera := Camera3D.new()
+	camera.fov = 40.0
+	camera.near = 0.1
+	camera.far = 200.0
+	camera.position = Vector3(0.0, 0.0, 12.0)
+	stage.add_child(camera)
+	camera.look_at(Vector3.ZERO, Vector3.UP)
+	camera.current = true
+	camera_node = camera
+
+
 func _add_backdrop() -> void:
 	if camera_node == null:
 		return
@@ -1669,7 +1707,7 @@ func _add_backdrop() -> void:
 	mat.shader = load("res://shaders/backdrop.gdshader")
 	mat.set_shader_parameter("top_color", preset["bg_top"])
 	mat.set_shader_parameter("bottom_color", preset["bg_bottom"])
-	mat.set_shader_parameter("glow_color", preset["glow"])
+	mat.set_shader_parameter("glow_color", preset["glow"] if celestial_enabled else Color(0, 0, 0))
 	mat.set_shader_parameter("glow_center", preset["glow_center"])
 	mat.set_shader_parameter("glow_scale", preset.get("glow_scale", Vector2(1.6, 1.1)))
 	mat.set_shader_parameter("glow_falloff", float(preset.get("glow_falloff", 4.5)))
@@ -1691,6 +1729,8 @@ func _add_backdrop() -> void:
 
 
 func _add_celestial() -> void:
+	# Off by default: the sun/moon disc is invented presentation, not part of
+	# the game's frame.
 	if not celestial_enabled:
 		return
 	if camera_mode != "classic" or camera_node == null:

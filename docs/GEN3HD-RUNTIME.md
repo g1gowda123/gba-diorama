@@ -127,8 +127,10 @@ the picture:
 godot --path viewer3d -- --world="$PWD/out/screen" --shot=/tmp/screen.png
 ```
 
-The card sits on the same rim, soil and underside as a terrain world, and
-`world.json` records `"mode": "flat"` so nothing tries to re-lift it.
+A flat frame is shown as a screen: upright, screen-aligned, unshaded, at the
+capture's aspect, with no slab, rim, sun or tilt, so a text box stays the flat
+2D box the game drew. `world.json` records `"mode": "flat"` so nothing tries to
+re-lift it.
 
 Flat mode is chosen automatically and the capture prints the evidence:
 
@@ -186,13 +188,13 @@ godot --path viewer3d -- --world="$PWD/out/gen3hd-world" \
   "time": "golden",
   "grade": "cinematic",
   "buildings": "mesh",
-  "render": { "dof": true, "tilt_shift": true, "vignette": true, "bloom": true,
-              "ssao": true, "fog": true, "particles": true, "dither": true,
+  "render": { "dof": true, "tilt_shift": true, "vignette": false, "bloom": true,
+              "ssao": true, "fog": true, "particles": false, "dither": true,
               "sway": true, "letterbox": false },
   "shadows": { "cast": true, "contact": true, "baked": true, "strength": -1.0 },
   "island": { "cliff_detail": true, "fringe": true, "vines": true, "rocks": true,
               "shards": true, "rim_lip": true, "underside": true, "glow": true },
-  "lights": { "celestial": true, "door": true, "windows": true, "lanterns": true },
+  "lights": { "celestial": false, "door": true, "windows": true, "lanterns": true },
   "live": { "path": "", "follow": false }
 }
 ```
