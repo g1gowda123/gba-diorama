@@ -896,10 +896,10 @@ func _add_island_glow() -> void:
 	# A camera-facing halo, not a flat quad: seen edge-on a horizontal glow
 	# reads as a bright hairline across the underside.
 	var quad := QuadMesh.new()
-	quad.size = Vector2(map_w * 1.9, map_h * 0.9)
+	quad.size = Vector2(map_w * 1.45, map_h * 0.62)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _soft_dot_texture()
-	mat.albedo_color = Color(0.10, 0.22, 0.42, 0.42)
+	mat.albedo_color = Color(0.10, 0.22, 0.42, 0.30)
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -911,7 +911,7 @@ func _add_island_glow() -> void:
 	var glow := MeshInstance3D.new()
 	glow.mesh = quad
 	glow.material_override = mat
-	glow.position = Vector3(map_w * 0.5, -2.05, map_h * 0.5)
+	glow.position = Vector3(map_w * 0.5, -2.45, map_h * 0.5)
 	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(glow)
 
@@ -1005,6 +1005,10 @@ func _build_objects() -> void:
 			float(bbox[0]) / 16.0, float(bbox[1]) / 16.0,
 			float(bbox[2]) / 16.0, float(bbox[3]) / 16.0
 		)
+		# Keep the card inside the island: a billboard centred past the rim
+		# hangs over the void with nothing under it.
+		cx = clampf(cx, w * 0.5, float(map_w) - w * 0.5)
+		cz = clampf(cz, h, float(map_h))
 		var kind := String(obj.get("kind", ""))
 		if kind == "building" and building_mode == "mesh":
 			_add_building(obj, texture, w, h, cx, base_y, cz)
@@ -1017,6 +1021,11 @@ func _build_objects() -> void:
 			if kind == "tree":
 				scale = 0.95 + float(hash % 13) / 13.0 * 0.11
 				flip = hash % 3 == 0
+				# A merged tile column (cliff, palisade, fence) arrives as a
+				# tall thin "tree" and reads as a stretched bark billboard.
+				# Keep tall cards in proportion instead of letting them tower.
+				if w > 0.0 and h > 2.2 * w:
+					scale *= (2.2 * w) / h
 				card_pos.y += (scale - 1.0) * h * 0.5
 			_add_billboard(texture, w, h, card_pos, tint, kind == "tree" or kind == "decor", flip, scale)
 			occluders.append({"pos": card_pos, "size": Vector2(w * scale, h * scale)})
