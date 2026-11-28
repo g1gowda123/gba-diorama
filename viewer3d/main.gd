@@ -1051,7 +1051,9 @@ func _build_objects() -> void:
 			if kind != "building" and not wall_slice and _is_flat_art(texture):
 				wall_slice = true
 			if (kind == "tree" and not _is_foliage(texture)) or wall_slice:
-				_add_ground_decal(texture, w, h, cx, base_y, cz)
+				# A wall gets a low body so the map keeps its enclosure, but it
+				# stays a low stump instead of a card floating over the sand.
+				_add_wall_block(texture, w, h, cx, base_y, cz, 0.42 if wall_slice else 0.0)
 			else:
 				_add_billboard(texture, w, h, card_pos, tint, kind == "tree" or kind == "decor", flip, scale)
 				occluders.append({"pos": card_pos, "size": Vector2(w * scale, h * scale)})
@@ -1458,6 +1460,29 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(instance)
 	return instance
+
+
+func _add_wall_block(texture: Texture2D, w: float, h: float, cx: float, base_y: float, cz: float, lift: float) -> void:
+	if lift <= 0.0:
+		_add_ground_decal(texture, w, h, cx, base_y, cz)
+		return
+	# Dark body under the cutout: thickness without inventing a shape.
+	var body := BoxMesh.new()
+	body.size = Vector3(w, lift, h)
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = Color(0.30, 0.27, 0.24)
+	body_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var body_instance := MeshInstance3D.new()
+	body_instance.mesh = body
+	body_instance.material_override = body_mat
+	body_instance.position = Vector3(cx, base_y + lift * 0.5 - 0.01, cz - h * 0.5)
+	body_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	stage.add_child(body_instance)
+	_add_ground_decal_at(texture, w, h, cx, base_y + lift, cz)
+
+
+func _add_ground_decal_at(texture: Texture2D, w: float, h: float, cx: float, y: float, cz: float) -> void:
+	_add_ground_decal(texture, w, h, cx, y - 0.008, cz)
 
 
 func _add_ground_decal(texture: Texture2D, w: float, h: float, cx: float, base_y: float, cz: float) -> void:
