@@ -1433,6 +1433,9 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 		mat.set_shader_parameter("albedo_tex", texture)
 		mat.set_shader_parameter("tint", tint)
 		mat.set_shader_parameter("billboard", true)
+		# Cut the cutout, never draw the texture's empty pixels as a block.
+		mat.set_shader_parameter("use_alpha", true)
+		mat.set_shader_parameter("alpha_cut", 0.40)
 		mat.set_shader_parameter("rim_strength", 0.24 if h > 1.0 else 0.10)
 		mat.set_shader_parameter("rim_color", Color(1.0, 0.80, 0.50))
 		mat.set_shader_parameter("base_shade", 0.30 if base_shade_override < 0.0 else base_shade_override)
