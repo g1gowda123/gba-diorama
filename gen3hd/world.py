@@ -719,6 +719,80 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
             obj.texture = padded
 
 
+def grow_clipped_cards(
+    objects: list[WorldObject],
+    composite: np.ndarray,
+    collision: np.ndarray,
+    ground: np.ndarray,
+    width: int,
+    height: int,
+) -> None:
+    """Extend a card that was cut through its art into the tile beside it.
+
+    Object discovery cuts on tile boundaries, so a canopy that overhangs its
+    block arrives with a straight edge where the leaves should continue: the
+    "half tree" that reads as a broken sprite.  A card whose art is dense on one
+    edge is grown one tile toward that edge, but only into cells that are solid
+    and owned by nobody, so a wall or a second tree is never absorbed.
+    """
+
+    owner: dict[tuple[int, int], int] = {}
+    for index, obj in enumerate(objects):
+        for cell in obj.source_cells:
+            owner[cell] = index
+
+    def growable(cells: list[tuple[int, int]], index: int, needs_solid: bool) -> bool:
+        for cell_x, cell_y in cells:
+            if not (0 <= cell_x < width and 0 <= cell_y < height):
+                return False
+            # A tree grows into the wall it stands in; a bush on open ground
+            # grows into the next bush tile.  Either way, never into another
+            # object's cell, and never across a tile that could be walked on
+            # when the art is a tree.
+            if needs_solid and collision[cell_y, cell_x] == 0:
+                return False
+            holder = owner.get((cell_x, cell_y))
+            if holder is not None and holder != index:
+                return False
+        return True
+
+    for index, obj in enumerate(objects):
+        if obj.kind in {"building", "wall"}:
+            continue
+        for _ in range(2):
+            alpha = obj.texture[..., 3] > 0
+            if not alpha.any():
+                break
+            x0, y0 = obj.bbox[0] // 16, obj.bbox[1] // 16
+            x1, y1 = obj.bbox[2] // 16, obj.bbox[3] // 16
+            edges = {
+                "top": (int(alpha[0, :].sum()), [(x, y0 - 1) for x in range(x0, x1)]),
+                "bottom": (int(alpha[-1, :].sum()), [(x, y1) for x in range(x0, x1)]),
+                "left": (int(alpha[:, 0].sum()), [(x0 - 1, y) for y in range(y0, y1)]),
+                "right": (int(alpha[:, -1].sum()), [(x1, y) for y in range(y0, y1)]),
+            }
+            edge, (count, cells) = max(edges.items(), key=lambda item: item[1][0])
+            if count < 3 or not growable(cells, index, obj.kind == "tree"):
+                break
+            if edge == "top":
+                y0 -= 1
+            elif edge == "bottom":
+                y1 += 1
+            elif edge == "left":
+                x0 -= 1
+            else:
+                x1 += 1
+            px0, py0, px1, py1 = x0 * 16, y0 * 16, x1 * 16, y1 * 16
+            obj.texture = composite[py0:py1, px0:px1].copy()
+            obj.bbox = (px0, py0, px1, py1)
+            obj.footprint = obj.bbox
+            obj.anchor = ((px0 + px1) // 2, py1)
+            obj.source_cells = tuple(set(obj.source_cells) | set(cells))
+            for cell in cells:
+                owner[cell] = index
+        refine_object_alpha([obj], ground)
+
+
 def _blur_mask(mask: np.ndarray, radius: int = 2) -> np.ndarray:
     """Separable box blur for the baked occlusion map (numpy only)."""
 
@@ -1058,6 +1132,14 @@ def compile_world(
             composed["metatile_ids"],
         )
         refine_object_alpha(objects, ground)
+        grow_clipped_cards(
+            objects,
+            composite,
+            composed["collision"],
+            ground,
+            layout.width,
+            layout.height,
+        )
         annotate_buildings(objects)
         palette = decode_palette(state.palette)
         oam = decode_oam(state.vram, state.oam, palette, state.io)
