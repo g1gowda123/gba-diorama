@@ -33,7 +33,14 @@ def frame_is_blank(path: Path) -> bool:
     return high - low < 6
 
 
-def capture_world(rom: Gen3Rom, host: RomdevHost, out: Path, *, flat: bool = False):
+def capture_world(
+    rom: Gen3Rom,
+    host: RomdevHost,
+    out: Path,
+    *,
+    flat: bool = False,
+    want_sprites: bool = False,
+):
     """Compile the frame the host is showing and export it to ``out``."""
 
     world = None
@@ -57,8 +64,10 @@ def capture_world(rom: Gen3Rom, host: RomdevHost, out: Path, *, flat: bool = Fal
         else:
             picture = exported / "composite.png"
         # A fade between maps is a black frame; step past it rather than
-        # shipping a black card or a black island.
-        if not frame_is_blank(picture):
+        # shipping a black card or a black island.  A cutscene can also hide
+        # every OAM entry, and a live view with no player sprite has nothing to
+        # follow, so `play` asks for sprites and waits for them.
+        if not frame_is_blank(picture) and (not want_sprites or world.sprites):
             return world, exported
         print(f"capture: frame {attempt + 1} is blank, stepping")
         host.step(24)
@@ -220,8 +229,12 @@ def _play(args: argparse.Namespace) -> int:
     host.wait_ready()
     if args.boot:
         host.boot_to_overworld(args.save, args.rom)
-    world, exported = capture_world(rom, host, out)
-    print(f"play: {world.mode}, {len(world.objects)} objects -> {exported}")
+    world, exported = capture_world(rom, host, out, want_sprites=True)
+    print(
+        f"play: {world.mode}, {len(world.objects)} objects, "
+        f"{len(world.sprites)} sprites -> {exported}",
+        flush=True,
+    )
     command = viewer_command(
         exported,
         exported / "live.json",
@@ -238,7 +251,7 @@ def _play(args: argparse.Namespace) -> int:
             if part
         ),
     )
-    print("play: " + " ".join(command))
+    print("play: " + " ".join(command), flush=True)
     viewer = subprocess.Popen(command)
     link = make_link(
         host,
