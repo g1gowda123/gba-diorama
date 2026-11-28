@@ -32,6 +32,9 @@ var sway_enabled := true
 var focus_override := Vector2(-1.0, -1.0)
 var live_path := ""
 var flat_mode := false
+var sprites_enabled := true
+var objects_enabled := true
+var debug_objects := false
 var follow_player := false
 var live_timer: Timer = null
 var sprite_nodes: Array = []
@@ -149,8 +152,10 @@ func _ready() -> void:
 	if debug_shadow:
 		_add_shadow_probe()
 	if not debug_ground and not flat_mode:
-		_build_objects()
-		_build_sprites()
+		if objects_enabled:
+			_build_objects()
+		if sprites_enabled:
+			_build_sprites()
 	_setup_camera()
 	if live_path != "":
 		_start_live()
@@ -216,6 +221,12 @@ func _parse_args() -> void:
 			shadows_enabled = false
 		elif arg == "--no-particles":
 			particles_enabled = false
+		elif arg == "--debug-objects":
+			debug_objects = true
+		elif arg == "--no-objects":
+			objects_enabled = false
+		elif arg == "--no-sprites":
+			sprites_enabled = false
 		elif arg == "--no-dither":
 			dither_enabled = false
 		elif arg == "--no-sway":
@@ -1014,6 +1025,8 @@ func _build_objects() -> void:
 			_add_building(obj, texture, w, h, cx, base_y, cz)
 		else:
 			var card_pos := Vector3(cx, base_y + h * 0.5 - 0.02, cz)
+			if debug_objects and h > 1.5:
+				print("[obj] ", kind, " ", obj.get("id", ""), " w=", w, " h=", h, " pos=", card_pos)
 			var tint := _object_tint(index, kind)
 			var hash := (index * 73 + int(cx * 17.0) + int(cz * 29.0)) & 0xFFFF
 			var scale := 1.0
@@ -1021,11 +1034,11 @@ func _build_objects() -> void:
 			if kind == "tree":
 				scale = 0.95 + float(hash % 13) / 13.0 * 0.11
 				flip = hash % 3 == 0
-				# A merged tile column (cliff, palisade, fence) arrives as a
-				# tall thin "tree" and reads as a stretched bark billboard.
-				# Keep tall cards in proportion instead of letting them tower.
-				if w > 0.0 and h > 2.2 * w:
-					scale *= (2.2 * w) / h
+				# A merged block can carry a tall union of tiles.  Scale the
+				# whole card down instead of cropping it: cropping leaves a
+				# flat-topped trunk, scaling keeps the canopy.
+				if h > 2.0:
+					scale *= 2.0 / h
 				card_pos.y += (scale - 1.0) * h * 0.5
 			_add_billboard(texture, w, h, card_pos, tint, kind == "tree" or kind == "decor", flip, scale)
 			occluders.append({"pos": card_pos, "size": Vector2(w * scale, h * scale)})

@@ -518,19 +518,6 @@ def discover_objects(
         for index, obj in enumerate(objects):
             obj.asset_id = f"obj-{index:03d}"
 
-    # A Gen 3 overworld object is at most two tiles tall (a tree); a building
-    # is meshed separately.  Blobs that grew past that through fragment
-    # absorption are unions of unrelated tiles (wall + door + sand) and lift
-    # as stretched columns, so cut them back to their base.
-    for obj in objects:
-        x0, y0, x1, y1 = obj.bbox
-        if obj.kind != "building" and (y1 - y0) > 32:
-            y0 = y1 - 32
-            obj.bbox = (x0, y0, x1, y1)
-            obj.footprint = (x0, y0, x1, y1)
-            obj.anchor = ((x0 + x1) // 2, y1)
-            obj.texture = composite[y0:y1, x0:x1].copy()
-
     return objects, object_cells | covered
 
 
