@@ -18,7 +18,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 import numpy as np
 
@@ -143,6 +143,9 @@ class LiveLink:
         frames: int = 6,
         walk: str = "",
         allowed: set[int] | None = None,
+        map_key: Callable[[], str] | None = None,
+        on_map_change: Callable[[str], dict | None] | None = None,
+        check_every: int = 10,
     ) -> None:
         self.host: SpriteSource = host
         self.world_dir = Path(world_dir)
@@ -153,6 +156,13 @@ class LiveLink:
         self.walk = walk
         self.allowed = allowed
         self.ticks = 0
+        # Map identity is read at a slower cadence than the sprite table: a
+        # whole-EWRAM read costs more than an OAM read and a map cannot change
+        # between two frames of the same scroll.
+        self.map_key = map_key
+        self.on_map_change = on_map_change
+        self.check_every = max(int(check_every), 1)
+        self._key: str | None = None
 
     def tick(self, advance: bool = True) -> dict:
         if advance and self.frames:
@@ -167,6 +177,25 @@ class LiveLink:
         payload = sprite_positions(
             oam, io, self.map_px_w, self.map_px_h, self.allowed
         )
+        if self.map_key is not None and self.ticks % self.check_every == 0:
+            try:
+                key = self.map_key()
+            except Exception:  # noqa: BLE001 - a bad read must not stop the loop
+                key = None
+            if key is not None:
+                if self._key is None:
+                    self._key = key
+                elif key != self._key:
+                    self._key = key
+                    payload["map_changed"] = key
+                    if self.on_map_change is not None:
+                        update = self.on_map_change(key) or {}
+                        if "allowed" in update:
+                            self.allowed = update["allowed"]
+                        if "width" in update:
+                            self.map_px_w = int(update["width"])
+                        if "height" in update:
+                            self.map_px_h = int(update["height"])
         payload["frame"] = self.host.frame_count
         payload["tick"] = self.ticks
         self.ticks += 1

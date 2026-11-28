@@ -36,7 +36,7 @@ var sprites_enabled := true
 var objects_enabled := true
 var debug_objects := false
 var follow_player := false
-var live_timer: Timer = null
+var live_clock := 0.0
 var sprite_nodes: Array = []
 var play_cam := {}
 var pitch_override := -1.0
@@ -193,7 +193,10 @@ func _ready() -> void:
 		var image := source.get_texture().get_image()
 		image.save_png(shot_path)
 		print("saved ", shot_path, " ", image.get_width(), "x", image.get_height())
-	get_tree().quit()
+		get_tree().quit()
+	else:
+		# No shot requested: stay open so the live feed can drive the scene.
+		print("viewer: running (close the window to stop)")
 
 
 func _parse_args() -> void:
@@ -2307,11 +2310,7 @@ func _start_live() -> void:
 	# fixed; only sprite billboards (and, with --follow, the play camera) move.
 	if not FileAccess.file_exists(live_path):
 		print("live: waiting for ", live_path)
-	live_timer = Timer.new()
-	live_timer.wait_time = 0.08
-	live_timer.autostart = true
-	live_timer.timeout.connect(_poll_live)
-	add_child(live_timer)
+	print("live: polling ", live_path)
 	_poll_live()
 
 
@@ -2325,6 +2324,13 @@ func _poll_live() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var frame: Dictionary = parsed
+	# `gen3hd live` recompiles the world and names the new map here.  A reload
+	# is the cheapest correct rebuild: terrain, objects and sprites are all
+	# derived from world.json.
+	if frame.has("map_changed"):
+		print("live: world changed (", frame["map_changed"], "), rebuilding")
+		get_tree().reload_current_scene()
+		return
 	var seen := {}
 	for entry in frame.get("sprites", []):
 		seen[int(entry.get("oam", -1))] = true
@@ -2390,9 +2396,17 @@ func _follow_live_player(frame: Dictionary) -> void:
 	camera_node.look_at(focus + Vector3(0.0, 0.55, 0.0), Vector3.UP)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if dither_enabled:
 		_update_dither_visibility()
+	# The live poll is driven here rather than by a Timer: a Timer node added
+	# during _ready proved unreliable in a scene that rebuilds its stage, and
+	# one accumulator is simpler to reason about.
+	if live_path != "":
+		live_clock += delta
+		if live_clock >= 0.08:
+			live_clock = 0.0
+			_poll_live()
 
 
 func _unhandled_input(event: InputEvent) -> void:

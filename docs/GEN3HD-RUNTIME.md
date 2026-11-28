@@ -146,6 +146,19 @@ Either signal switches the frame to flat. `--no-auto-flat` always lifts, and
 
 ### Live link
 
+### Map changes
+
+`gen3hd live` reads the map identity (layout pointer and size) every
+`--check-every` ticks and recompiles the world in place when it changes, so
+walking into a new map does not need a fresh `capture`. The payload names the
+new map in `map_changed`; the viewer sees it on its next poll and reloads the
+scene, which rebuilds terrain, objects and sprites from the new `world.json`.
+
+`--no-recompile` keeps the detection and prints it without touching the world.
+The identity read costs a whole-EWRAM read, so it runs at a tenth of the
+sprite rate by default.
+
+
 A compiled world is static for one map; the camera scroll and the OAM sprite
 table are what change. `gen3hd live` publishes those to `live.json` beside
 `world.json` and the viewer polls it, so sprites walk on the diorama while the

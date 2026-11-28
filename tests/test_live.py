@@ -115,3 +115,75 @@ def test_live_link_publishes_through_a_stub_host(tmp_path) -> None:
     assert payload["frame"] == 3
     written = json.loads((tmp_path / "live.json").read_text())
     assert written["sprites"][0]["world"] == [76, 64]
+
+
+def test_map_change_is_published_once_and_updates_the_link(tmp_path) -> None:
+    class StubHost:
+        frame_count = 0
+
+        def step(self, frames: int = 1) -> dict:
+            self.frame_count += frames
+            return {"frameCount": self.frame_count}
+
+        def press(self, button: str, frames: int = 6) -> dict:
+            return self.step(frames)
+
+        def read_region(self, region: str) -> bytes:
+            return _oam([_entry(40, 60)]) if region == "gba_oam" else _io(0, 0).tobytes()
+
+    keys = iter(["A", "A", "B", "B"])
+    rebuilt: list[str] = []
+
+    def recompile(key: str) -> dict:
+        rebuilt.append(key)
+        return {"allowed": {7}, "width": 480, "height": 320}
+
+    link = LiveLink(
+        StubHost(),
+        tmp_path,
+        320,
+        320,
+        interval=0.0,
+        frames=0,
+        map_key=lambda: next(keys),
+        on_map_change=recompile,
+        check_every=1,
+    )
+
+    first = link.tick()
+    assert "map_changed" not in first  # the first read only records the key
+    second = link.tick()
+    assert "map_changed" not in second
+    third = link.tick()
+    assert third["map_changed"] == "B"
+    assert rebuilt == ["B"]
+    assert link.map_px_w == 480 and link.map_px_h == 320
+    assert link.allowed == {7}
+    # A repeated key must not rebuild again.
+    link.tick()
+    assert rebuilt == ["B"]
+
+
+def test_a_failing_map_read_does_not_stop_the_link(tmp_path) -> None:
+    class StubHost:
+        frame_count = 0
+
+        def step(self, frames: int = 1) -> dict:
+            return {"frameCount": 0}
+
+        def press(self, button: str, frames: int = 6) -> dict:
+            return self.step(frames)
+
+        def read_region(self, region: str) -> bytes:
+            return _oam([_entry(16, 16)]) if region == "gba_oam" else _io(0, 0).tobytes()
+
+    def explode() -> str:
+        raise RuntimeError("ewram read failed")
+
+    link = LiveLink(
+        StubHost(), tmp_path, 320, 320, interval=0.0, frames=0,
+        map_key=explode, check_every=1,
+    )
+    payload = link.tick()
+
+    assert payload["sprites"][0]["oam"] == 0

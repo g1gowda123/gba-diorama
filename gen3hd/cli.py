@@ -6,6 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
+
+from .gen3.locate import locate_map
 from .gen3.rom import Gen3Rom
 from .host import DEFAULT_BASE, DEFAULT_SESSION, RomdevHost
 from .live import LiveLink
@@ -56,6 +59,45 @@ def _live(args: argparse.Namespace) -> int:
     host.wait_ready()
     if args.boot:
         host.boot_to_overworld(args.save, args.rom)
+    def map_key() -> str:
+        """Identity of the map on screen: layout pointer plus its size."""
+
+        located = locate_map(
+            np.frombuffer(host.read_region("gba_iwram"), dtype=np.uint8),
+            np.frombuffer(host.read_region("system_ram"), dtype=np.uint8),
+            rom,
+        )
+        return f"{located.layout.pointer:08X}:{located.layout.width}x{located.layout.height}"
+
+    def recompile(key: str) -> dict | None:
+        """Rebuild the world in place after a map change."""
+
+        if not args.recompile:
+            print(f"live: map changed to {key} (not recompiling)")
+            return None
+        snapshot = host.snapshot()
+        snapshot.title = rom.header.title
+        snapshot.game_code = rom.header.game_code
+        world = compile_world(snapshot, rom, auto_flat=True)
+        out = world.export(world_dir)
+        if world.mode == "flat":
+            host.screenshot(out / "screen.png")
+        fresh = json.loads((world_dir / "world.json").read_text())
+        print(
+            f"live: map changed to {key} -> {world.mode}, "
+            f"{len(world.objects)} objects, {fresh['map']['pixel_width']}x"
+            f"{fresh['map']['pixel_height']} px"
+        )
+        return {
+            "allowed": {
+                int(sprite["oam"])
+                for sprite in fresh.get("sprites", [])
+                if int(sprite.get("oam", -1)) >= 0
+            },
+            "width": int(fresh["map"]["pixel_width"]),
+            "height": int(fresh["map"]["pixel_height"]),
+        }
+
     link = LiveLink(
         host,
         world_dir,
@@ -65,6 +107,9 @@ def _live(args: argparse.Namespace) -> int:
         frames=args.frames,
         walk=args.walk,
         allowed=allowed,
+        map_key=map_key,
+        on_map_change=recompile,
+        check_every=args.check_every,
     )
     target = (world_dir / "live.json").resolve()
     print(f"live: publishing {target} at {1.0 / max(args.interval, 1e-3):.0f} Hz")
@@ -105,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--frames", type=int, default=6, help="emulator frames per update")
     live.add_argument("--seconds", type=float, default=0.0, help="0 = run until interrupted")
     live.add_argument("--walk", default="", help="hold this direction (up/down/left/right)")
+    live.add_argument(
+        "--check-every", type=int, default=10,
+        help="ticks between map-identity reads (default 10)",
+    )
+    live.add_argument(
+        "--no-recompile", dest="recompile", action="store_false",
+        help="detect map changes but leave the world as captured",
+    )
     live.set_defaults(func=_live)
 
     return parser
