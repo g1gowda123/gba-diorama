@@ -1040,8 +1040,13 @@ func _build_objects() -> void:
 				if h > 2.0:
 					scale *= 2.0 / h
 				card_pos.y += (scale - 1.0) * h * 0.5
-			_add_billboard(texture, w, h, card_pos, tint, kind == "tree" or kind == "decor", flip, scale)
-			occluders.append({"pos": card_pos, "size": Vector2(w * scale, h * scale)})
+			if kind == "tree" and not _is_foliage(texture):
+				# A "tree" with no green is a block of masonry or a wall slice;
+				# standing it up is what produced the striped columns.
+				_add_ground_decal(texture, w, h, cx, base_y, cz)
+			else:
+				_add_billboard(texture, w, h, card_pos, tint, kind == "tree" or kind == "decor", flip, scale)
+				occluders.append({"pos": card_pos, "size": Vector2(w * scale, h * scale)})
 		# Contact shadow: soft, directional and deliberately lighter than the
 		# real shadow map so the two do not double up into mud.  Meshed
 		# buildings add their own footprint shadow inside _add_building().
@@ -1442,6 +1447,52 @@ func _add_billboard(texture: Texture2D, w: float, h: float, pos: Vector3, tint: 
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	stage.add_child(instance)
 	return instance
+
+
+func _add_ground_decal(texture: Texture2D, w: float, h: float, cx: float, base_y: float, cz: float) -> void:
+	# Paints a cutout flat on the surface.  Used when a "tree" card is really
+	# masonry or a wall slice: standing it up produced striped columns.
+	var quad := QuadMesh.new()
+	quad.size = Vector2(w, h)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = texture
+	mat.albedo_color = Color(1, 1, 1)
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	mat.alpha_scissor_threshold = 0.5
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var instance := MeshInstance3D.new()
+	instance.mesh = quad
+	instance.material_override = mat
+	instance.position = Vector3(cx, base_y + 0.008, cz - h * 0.5)
+	instance.rotation_degrees = Vector3(-90, 0, 0)
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stage.add_child(instance)
+
+
+func _is_foliage(texture: Texture2D) -> bool:
+	# Trees carry a green canopy; a 2x2 block of stone or bars does not.  A
+	# small sample is enough to tell them apart and keeps this cheap.
+	var image := texture.get_image()
+	if image == null:
+		return true
+	image.convert(Image.FORMAT_RGBA8)
+	var green := 0
+	var solid := 0
+	var step_x: int = maxi(1, image.get_width() / 8)
+	var step_y: int = maxi(1, image.get_height() / 8)
+	for y in range(0, image.get_height(), step_y):
+		for x in range(0, image.get_width(), step_x):
+			var c := image.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			solid += 1
+			if c.g > c.r * 1.05 and c.g > c.b * 1.05:
+				green += 1
+	if solid == 0:
+		return false
+	return float(green) / float(solid) >= 0.10
 
 
 func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> MeshInstance3D:
