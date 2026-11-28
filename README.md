@@ -309,11 +309,14 @@ on real scrolling scenes before replacing the temporary sparse-overlay skip.
   `--check-every` ticks and recompiles the world in place when it changes, so
   walking into a new map needs no fresh capture. The viewer rebuilds itself
   when the published map key changes.
+- `gen3hd audit --world out/play --sheet out/audit.png` checks a compiled world
+  for structural faults (empty cards, shared tiles, art cut at a card edge,
+  half-height trees, blank sprites) and draws a contact sheet of the suspects.
 - One command to play: `gen3hd play --rom game.gba [--save game.sav] [--boot]`
   captures the current frame, opens the diorama, keeps the link running and
   forwards your keys to the emulator (arrows/WASD, Z/A, X/B, Enter,
   Backspace).
-- Deterministic CLI and 90 tests.
+- Deterministic CLI and 97 tests.
 
 ## What is not done yet
 

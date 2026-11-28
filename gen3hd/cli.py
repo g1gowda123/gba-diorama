@@ -15,6 +15,7 @@ from .gen3.locate import locate_map
 from PIL import Image
 
 from .gen3.rom import Gen3Rom
+from .audit import audit_world, contact_sheet, format_audit
 from .host import DEFAULT_BASE, DEFAULT_SESSION, RomdevHost
 from .live import LiveLink
 from .world import compile_world
@@ -277,6 +278,31 @@ def _play(args: argparse.Namespace) -> int:
     return 0
 
 
+def _audit(args: argparse.Namespace) -> int:
+    world_dir = Path(args.world)
+    audit = audit_world(world_dir)
+    print(format_audit(audit))
+    if args.sheet:
+        target = contact_sheet(world_dir, args.sheet)
+        print(f"audit: contact sheet -> {target}")
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "severity": f.severity,
+                        "code": f.code,
+                        "target": f.target,
+                        "detail": f.detail,
+                    }
+                    for f in audit.findings
+                ],
+                indent=1,
+            )
+        )
+    return 1 if audit.errors else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gen3hd")
     parser.add_argument("--base", default=DEFAULT_BASE)
@@ -347,6 +373,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="hold a direction (testing/demos)",
     )
     play.set_defaults(func=_play)
+
+    audit = sub.add_parser(
+        "audit", help="check a compiled world for structural faults"
+    )
+    audit.add_argument("--world", required=True)
+    audit.add_argument("--sheet", default="", help="write a contact sheet of the suspects")
+    audit.add_argument("--json", action="store_true", help="also print the findings as JSON")
+    audit.set_defaults(func=_audit)
 
     return parser
 

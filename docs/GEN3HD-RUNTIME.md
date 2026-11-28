@@ -161,6 +161,24 @@ between it and the player fades out, so roofs cannot hide the sprite. The grade
 defaults to `day` (what the game looks like); `--time=golden|dusk|night`,
 `--no-follow` and `--walk <dir>` are there for demos.
 
+## Auditing a world
+
+```
+gen3hd audit --world out/play --sheet out/audit.png
+```
+
+Reads `world.json` and the exported textures and reports what is wrong by
+construction, not by taste: a card with no pixels, a missing texture, two
+objects claiming one tile, a card whose art fills almost none of it, art cut at
+a card edge (a canopy sliced in half), a single-tone card that should have been
+flattened, a tree far shorter than its peers, a sprite with no pixels, a flat
+world carrying lifted objects. Exit code is 1 when an error is found, so it can
+gate a capture.
+
+`--sheet` writes a labelled contact sheet of the suspects: the quickest way to
+see whether "sparse" means a small prop in a big card (fine) or a canopy cut in
+half (not fine). `--json` prints the same findings for a script.
+
 ## Live link
 
 ### Map changes
