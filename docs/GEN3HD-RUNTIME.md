@@ -156,6 +156,11 @@ live link running, and forwards keys to the emulator through romdev's input op
 Backspace for Select). Close the window to stop; the world directory it grows
 in is `out/play` unless `--out` says otherwise.
 
+The camera follows the player from 38 degrees, and any building standing
+between it and the player fades out, so roofs cannot hide the sprite. The grade
+defaults to `day` (what the game looks like); `--time=golden|dusk|night`,
+`--no-follow` and `--walk <dir>` are there for demos.
+
 ## Live link
 
 ### Map changes
