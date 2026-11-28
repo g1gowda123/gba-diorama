@@ -12,24 +12,58 @@ from pathlib import Path
 import numpy as np
 
 from .gen3.locate import locate_map
+from PIL import Image
+
 from .gen3.rom import Gen3Rom
 from .host import DEFAULT_BASE, DEFAULT_SESSION, RomdevHost
 from .live import LiveLink
 from .world import compile_world
 
 
+def frame_is_blank(path: Path) -> bool:
+    """True when the frame carries no picture (a fade, or the screen off)."""
+
+    try:
+        with Image.open(path) as image:
+            low, high = image.convert("L").getextrema()
+    except OSError:
+        return False
+    if not isinstance(low, int) or not isinstance(high, int):
+        return False
+    return high - low < 6
+
+
 def capture_world(rom: Gen3Rom, host: RomdevHost, out: Path, *, flat: bool = False):
     """Compile the frame the host is showing and export it to ``out``."""
 
-    snapshot = host.snapshot()
-    snapshot.title = rom.header.title
-    snapshot.game_code = rom.header.game_code
-    world = compile_world(snapshot, rom, flat=flat, auto_flat=True)
-    exported = world.export(out)
-    if world.mode == "flat":
-        # Flat mode is a screen, not a map: keep the emulator's own frame so
-        # BG0 (dialogue, menus) and OAM sprites are in the card too.
-        host.screenshot(exported / "screen.png")
+    world = None
+    exported = out
+    for attempt in range(3):
+        snapshot = host.snapshot()
+        snapshot.title = rom.header.title
+        snapshot.game_code = rom.header.game_code
+        world = compile_world(snapshot, rom, flat=flat, auto_flat=True)
+        exported = world.export(out)
+        if world.mode == "flat":
+            # Flat mode is a screen, not a map: keep the emulator's own frame
+            # so BG0 (dialogue, menus) and OAM sprites are in the card too.
+            screen = exported / "screen.png"
+            for _ in range(6):
+                host.screenshot(screen)
+                if not frame_is_blank(screen):
+                    break
+                host.step(16)
+            picture = screen
+        else:
+            picture = exported / "composite.png"
+        # A fade between maps is a black frame; step past it rather than
+        # shipping a black card or a black island.
+        if not frame_is_blank(picture):
+            return world, exported
+        print(f"capture: frame {attempt + 1} is blank, stepping")
+        host.step(24)
+    print("capture: warning, the frame is still blank")
+    assert world is not None
     return world, exported
 
 
