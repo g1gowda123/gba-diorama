@@ -152,10 +152,12 @@ def test_map_change_is_published_once_and_updates_the_link(tmp_path) -> None:
 
     first = link.tick()
     assert "map_changed" not in first  # the first read only records the key
+    assert first["map"] == "A"  # published so a viewer can compare
     second = link.tick()
     assert "map_changed" not in second
     third = link.tick()
     assert third["map_changed"] == "B"
+    assert third["map"] == "B"
     assert rebuilt == ["B"]
     assert link.map_px_w == 480 and link.map_px_h == 320
     assert link.allowed == {7}

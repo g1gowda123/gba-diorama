@@ -187,7 +187,6 @@ class LiveLink:
                     self._key = key
                 elif key != self._key:
                     self._key = key
-                    payload["map_changed"] = key
                     if self.on_map_change is not None:
                         update = self.on_map_change(key) or {}
                         if "allowed" in update:
@@ -196,6 +195,11 @@ class LiveLink:
                             self.map_px_w = int(update["width"])
                         if "height" in update:
                             self.map_px_h = int(update["height"])
+                    payload["map_changed"] = key
+        # Published only after any recompile has finished, so a viewer that
+        # sees a new key is guaranteed the world on disk already matches it.
+        if self._key is not None:
+            payload["map"] = self._key
         payload["frame"] = self.host.frame_count
         payload["tick"] = self.ticks
         self.ticks += 1

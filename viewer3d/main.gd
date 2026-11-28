@@ -37,6 +37,7 @@ var objects_enabled := true
 var debug_objects := false
 var follow_player := false
 var live_clock := 0.0
+var live_map := ""
 var sprite_nodes: Array = []
 var play_cam := {}
 var pitch_override := -1.0
@@ -2324,13 +2325,17 @@ func _poll_live() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var frame: Dictionary = parsed
-	# `gen3hd live` recompiles the world and names the new map here.  A reload
-	# is the cheapest correct rebuild: terrain, objects and sprites are all
-	# derived from world.json.
-	if frame.has("map_changed"):
-		print("live: world changed (", frame["map_changed"], "), rebuilding")
-		get_tree().reload_current_scene()
-		return
+	# `gen3hd live` publishes the map it has already recompiled for.  A new key
+	# means the world on disk is a different map, so a reload is correct and
+	# race-free (the key appears only after the recompile).
+	if frame.has("map"):
+		var key := String(frame["map"])
+		if live_map == "":
+			live_map = key
+		elif key != live_map:
+			print("live: world changed (", key, "), rebuilding")
+			get_tree().reload_current_scene()
+			return
 	var seen := {}
 	for entry in frame.get("sprites", []):
 		seen[int(entry.get("oam", -1))] = true
