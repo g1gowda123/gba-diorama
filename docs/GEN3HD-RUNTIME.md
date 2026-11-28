@@ -154,6 +154,11 @@ walking into a new map does not need a fresh `capture`. The payload names the
 new map in `map_changed`; the viewer sees it on its next poll and reloads the
 scene, which rebuilds terrain, objects and sprites from the new `world.json`.
 
+Every payload carries that identity as `map`, published only after the
+recompile has finished, so the viewer can compare it with the world it loaded:
+a different key means the world on disk is a different map and the scene is
+rebuilt. A transient flag would race with the next tick; the key cannot.
+
 `--no-recompile` keeps the detection and prints it without touching the world.
 The identity read costs a whole-EWRAM read, so it runs at a tenth of the
 sprite rate by default.
