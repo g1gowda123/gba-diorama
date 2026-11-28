@@ -144,7 +144,19 @@ Either signal switches the frame to flat. `--no-auto-flat` always lifts, and
 `--flat` forces a card. Both numbers are recorded in `world.json`
 (`ui_coverage`, `map_coverage`) so a wrong decision is explainable.
 
-### Live link
+### Playing
+
+```
+gen3hd play --rom "game.gba" --save "game.sav" --boot
+```
+
+Captures the frame the emulator is showing, opens the diorama on it, keeps the
+live link running, and forwards keys to the emulator through romdev's input op
+(arrows or WASD, `Z`/`J`/space for A, `X`/`K` for B, Enter for Start,
+Backspace for Select). Close the window to stop; the world directory it grows
+in is `out/play` unless `--out` says otherwise.
+
+## Live link
 
 ### Map changes
 

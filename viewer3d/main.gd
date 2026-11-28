@@ -37,6 +37,12 @@ var objects_enabled := true
 var debug_objects := false
 var follow_player := false
 var live_clock := 0.0
+var input_url := ""
+var input_session := "default"
+var input_http: HTTPRequest = null
+var input_queue: Array[String] = []
+var input_busy := false
+var input_probe := false
 var live_map := ""
 var sprite_nodes: Array = []
 var play_cam := {}
@@ -197,6 +203,8 @@ func _ready() -> void:
 		get_tree().quit()
 	else:
 		# No shot requested: stay open so the live feed can drive the scene.
+		if input_url != "":
+			_setup_input()
 		print("viewer: running (close the window to stop)")
 
 
@@ -300,6 +308,12 @@ func _parse_args() -> void:
 			time_preset = arg.trim_prefix("--time=")
 		elif arg.begins_with("--grade="):
 			grade_mode = arg.trim_prefix("--grade=")
+		elif arg == "--input-probe":
+			input_probe = true
+		elif arg.begins_with("--input="):
+			input_url = arg.trim_prefix("--input=")
+		elif arg.begins_with("--session="):
+			input_session = arg.trim_prefix("--session=")
 		elif arg.begins_with("--live="):
 			live_path = arg.trim_prefix("--live=")
 		elif arg == "--follow":
@@ -2415,10 +2429,81 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_T:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if event.keycode == KEY_T:
 		dither_enabled = not dither_enabled
 		_update_dither_visibility()
 		print("dither ", "on" if dither_enabled else "off")
+		return
+	if input_url == "":
+		return
+	# The viewer is the window you play in: keys go to the emulator through
+	# romdev's input op, so the game runs on its own hardware model.
+	var button := ""
+	match event.keycode:
+		KEY_UP, KEY_W:
+			button = "up"
+		KEY_DOWN, KEY_S:
+			button = "down"
+		KEY_LEFT, KEY_A:
+			button = "left"
+		KEY_RIGHT, KEY_D:
+			button = "right"
+		KEY_Z, KEY_J, KEY_SPACE:
+			button = "a"
+		KEY_X, KEY_K:
+			button = "b"
+		KEY_ENTER, KEY_KP_ENTER:
+			button = "start"
+		KEY_BACKSPACE:
+			button = "select"
+	if button != "":
+		_send_button(button)
+
+
+func _setup_input() -> void:
+	input_http = HTTPRequest.new()
+	input_http.timeout = 4.0
+	add_child(input_http)
+	input_http.request_completed.connect(_on_input_done)
+	print("input: forwarding keys to ", input_url, " (session ", input_session, ")")
+	if input_probe:
+		await get_tree().create_timer(2.0).timeout
+		print("input: probe pressing down")
+		_send_button("down")
+
+
+func _send_button(button: String) -> void:
+	input_queue.append(button)
+	# A held direction arrives as repeats; four frames per press keeps the
+	# game walking without queueing a backlog of stale presses.
+	while input_queue.size() > 3:
+		input_queue.pop_front()
+	_drain_input()
+
+
+func _drain_input() -> void:
+	if input_busy or input_queue.is_empty() or input_http == null:
+		return
+	var button: String = input_queue.pop_front()
+	input_busy = true
+	var headers := PackedStringArray([
+		"content-type: application/json",
+		"x-romdev-session: " + input_session,
+	])
+	var body := JSON.stringify({"op": "press", "button": button, "frames": 4})
+	var error := input_http.request(input_url, headers, HTTPClient.METHOD_POST, body)
+	if error != OK:
+		input_busy = false
+		print("input: request failed ", error)
+
+
+func _on_input_done(_result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	input_busy = false
+	if code >= 400:
+		print("input: emulator said ", code, " ", body.get_string_from_utf8().left(120))
+	_drain_input()
 
 
 func _add_tilt_shift() -> void:

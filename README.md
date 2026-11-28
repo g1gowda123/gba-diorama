@@ -304,9 +304,16 @@ on real scrolling scenes before replacing the temporary sparse-overlay skip.
   handling for the mGBA patch.
 - A live link: `gen3hd live` publishes the OAM sprite table and scroll to
   `live.json` at 10 Hz, and the viewer moves its sprite billboards and can
-  follow the player, so the diorama animates while the emulator runs. Terrain
-  and sprite textures still come from the compiled capture.
-- Deterministic CLI and 77 tests.
+  follow the player, so the diorama animates while the emulator runs.
+- Map changes in that loop: the link reads the map identity every
+  `--check-every` ticks and recompiles the world in place when it changes, so
+  walking into a new map needs no fresh capture. The viewer rebuilds itself
+  when the published map key changes.
+- One command to play: `gen3hd play --rom game.gba [--save game.sav] [--boot]`
+  captures the current frame, opens the diorama, keeps the link running and
+  forwards your keys to the emulator (arrows/WASD, Z/A, X/B, Enter,
+  Backspace).
+- Deterministic CLI and 90 tests.
 
 ## What is not done yet
 
