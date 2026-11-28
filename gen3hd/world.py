@@ -710,10 +710,13 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
         # Keep the full bottom edge: the card must stay anchored at the
         # footprint's front edge, even if the lowest pixels are shadow.
         if (x0, y0, x1, height) != (0, 0, width, height):
-            obj.texture = texture[y0:height, x0:x1].copy()
-            bx0, by0, _, by1 = obj.bbox
-            obj.bbox = (bx0 + int(x0), by0 + int(y0), bx0 + int(x1), by1)
-            obj.anchor = ((obj.bbox[0] + obj.bbox[2]) // 2, obj.bbox[3])
+            # Trim the empty margin but keep the card the size its footprint
+            # says: shrinking the bbox made a 2x2 tree a 2x1.25 card, which
+            # reads as a half-size tree with the bush in front on its tile.
+            tight = texture[y0:height, x0:x1]
+            padded = np.zeros_like(texture)
+            padded[y0:height, x0:x1] = tight
+            obj.texture = padded
 
 
 def _blur_mask(mask: np.ndarray, radius: int = 2) -> np.ndarray:

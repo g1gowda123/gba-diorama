@@ -1082,11 +1082,11 @@ func _build_objects() -> void:
 			if kind == "tree":
 				scale = 0.95 + float(hash % 13) / 13.0 * 0.11
 				flip = hash % 3 == 0
-				# A merged block can carry a tall union of tiles.  Scale the
-				# whole card down instead of cropping it: cropping leaves a
-				# flat-topped trunk, scaling keeps the canopy.
-				if h > 2.0:
-					scale *= 2.0 / h
+				# A three-tile tree is real (canopy plus trunk); only a union
+				# taller than that is a merged column.  Scale that down whole
+				# rather than cropping it, so the canopy survives.
+				if h > 3.0:
+					scale *= 3.0 / h
 				card_pos.y += (scale - 1.0) * h * 0.5
 			# A wide, shallow cutout is a wall top or a ground band, not a
 			# standing prop: lifted, it hovers over the sand as a pale card.
