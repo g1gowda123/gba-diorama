@@ -43,6 +43,9 @@ var input_http: HTTPRequest = null
 var input_queue: Array[String] = []
 var input_busy := false
 var input_probe := false
+var building_parts: Array = []
+var follow_debug := false
+var follow_reported := false
 var live_map := ""
 var sprite_nodes: Array = []
 var play_cam := {}
@@ -186,6 +189,10 @@ func _ready() -> void:
 	# A still with a live feed should show the latest emulator frame, not the
 	# one baked into world.json.
 	if live_path != "":
+		# Following only means something from the play camera; a classic view
+		# frames the whole island and has no camera to move.
+		if follow_player and camera_mode == "classic":
+			camera_mode = "play"
 		_poll_live()
 
 	# Let the renderer draw the scene before reading the viewport.
@@ -308,6 +315,8 @@ func _parse_args() -> void:
 			time_preset = arg.trim_prefix("--time=")
 		elif arg.begins_with("--grade="):
 			grade_mode = arg.trim_prefix("--grade=")
+		elif arg == "--follow-debug":
+			follow_debug = true
 		elif arg == "--input-probe":
 			input_probe = true
 		elif arg.begins_with("--input="):
@@ -1045,7 +1054,23 @@ func _build_objects() -> void:
 		cz = clampf(cz, h, float(map_h))
 		var kind := String(obj.get("kind", ""))
 		if kind == "building" and building_mode == "mesh":
+			var before := stage.get_child_count()
 			_add_building(obj, texture, w, h, cx, base_y, cz)
+			# Keep each building's pieces together so a follow camera can fade
+			# the one standing between it and the player.
+			var pieces: Array = []
+			for child_index in range(before, stage.get_child_count()):
+				var child := stage.get_child(child_index)
+				if child is GeometryInstance3D:
+					pieces.append(child)
+			if not pieces.is_empty():
+				building_parts.append({
+					"parts": pieces,
+					"cx": cx,
+					"cz": cz,
+					"w": w,
+					"d": float(obj.get("depth", w * 0.6)),
+				})
 		else:
 			var card_pos := Vector3(cx, base_y + h * 0.5 - 0.02, cz)
 			if debug_objects and h > 1.5:
@@ -1715,8 +1740,10 @@ func _setup_camera() -> void:
 		var fy := _cell_height(int(floor(fx)), int(floor(fz)))
 		var focus := Vector3(fx, fy + 0.35, fz)
 		var play_yaw := deg_to_rad(20.0 if yaw_override < -999.0 else yaw_override)
-		var play_pitch := deg_to_rad(23.0 if pitch_override < 0.0 else pitch_override)
-		var play_distance := 13.0
+		# A play camera looks over the buildings: 23 degrees put the player
+		# behind roofs whenever they walked close to one.
+		var play_pitch := deg_to_rad(38.0 if pitch_override < 0.0 else pitch_override)
+		var play_distance := 11.5
 		if distance_override > 0.0:
 			play_distance = distance_override
 		var play_fov := 40.0
@@ -2362,6 +2389,11 @@ func _poll_live() -> void:
 		if shadow != null:
 			shadow.visible = visible
 	if follow_player:
+		if follow_debug and not follow_reported:
+			var player_oam := int(frame.get("player", -1))
+			var known := not _sprite_record(player_oam).is_empty()
+			print("follow: player oam ", player_oam, " known=", known, " nodes=", sprite_nodes.size(), " play_cam=", play_cam)
+			follow_reported = true
 		_follow_live_player(frame)
 
 
@@ -2404,6 +2436,18 @@ func _follow_live_player(frame: Dictionary) -> void:
 	var fz := clampf(node.position.z, 5.0, float(map_h) - 5.0)
 	var fy := _cell_height(int(floor(fx)), int(floor(fz)))
 	var focus := Vector3(fx, fy + 0.35, fz)
+	# Fade any building between the camera and the player: the camera sits
+	# south of the focus, so anything nearer than the player hides them.
+	for building in building_parts:
+		var depth: float = building["d"]
+		var half_w: float = float(building["w"]) * 0.5
+		var occluding: bool = (
+			float(building["cz"]) > focus.z - 0.25
+			and absf(float(building["cx"]) - focus.x) < half_w + 2.4
+			and float(building["cz"]) - focus.z < depth + 5.0
+		)
+		for piece in building["parts"]:
+			piece.transparency = 0.72 if occluding else 0.0
 	var yaw: float = play_cam["yaw"]
 	var pitch: float = play_cam["pitch"]
 	var distance: float = play_cam["distance"]
@@ -2468,10 +2512,29 @@ func _setup_input() -> void:
 	add_child(input_http)
 	input_http.request_completed.connect(_on_input_done)
 	print("input: forwarding keys to ", input_url, " (session ", input_session, ")")
+	_add_input_hint()
 	if input_probe:
 		await get_tree().create_timer(2.0).timeout
 		print("input: probe pressing down")
 		_send_button("down")
+
+
+func _add_input_hint() -> void:
+	# The window is the controller now, so say which keys do what.  Small and
+	# low-contrast: it should never compete with the game's own frame.
+	var layer := CanvasLayer.new()
+	layer.layer = 12
+	add_child(layer)
+	var label := Label.new()
+	label.text = "arrows / WASD  move     Z  A     X  B     Enter  start     Backspace  select"
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.84, 0.62))
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.75))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	label.position = Vector2(18.0, -34.0)
+	layer.add_child(label)
 
 
 func _send_button(button: String) -> void:

@@ -40,6 +40,7 @@ def viewer_command(
     godot: str = "",
     input_url: str = "",
     session: str = "",
+    extra: tuple[str, ...] = (),
 ) -> list[str]:
     """The command that opens the diorama on a compiled world."""
 
@@ -57,6 +58,7 @@ def viewer_command(
         command.append(f"--input={input_url}")
     if session:
         command.append(f"--session={session}")
+    command.extend(extra)
     return command
 
 
@@ -192,6 +194,15 @@ def _play(args: argparse.Namespace) -> int:
         godot=args.godot,
         input_url=f"{args.base.rstrip('/')}/tool/input",
         session=args.session,
+        extra=tuple(
+            part
+            for part in (
+                "--follow",
+                "--camera=play" if args.follow else "",
+                f"--time={args.time}" if args.time else "",
+            )
+            if part
+        ),
     )
     print("play: " + " ".join(command))
     viewer = subprocess.Popen(command)
@@ -201,7 +212,7 @@ def _play(args: argparse.Namespace) -> int:
         exported,
         interval=args.interval,
         frames=args.frames,
-        walk="",
+        walk=args.walk,
         check_every=args.check_every,
     )
     try:
@@ -273,6 +284,15 @@ def build_parser() -> argparse.ArgumentParser:
     play.add_argument("--frames", type=int, default=6)
     play.add_argument("--check-every", type=int, default=10)
     play.add_argument("--godot", default="", help="godot binary (default: found on PATH)")
+    play.add_argument(
+        "--no-follow", dest="follow", action="store_false",
+        help="keep the whole map framed instead of following the player",
+    )
+    play.add_argument(
+        "--time", default="day",
+        help="grade for play: day (faithful, default), golden, dusk or night",
+    )
+    play.add_argument("--walk", default="", help="hold a direction (testing/demos)")
     play.set_defaults(func=_play)
 
     return parser
