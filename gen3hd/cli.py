@@ -22,7 +22,7 @@ def _capture(args: argparse.Namespace) -> int:
     snapshot.title = rom.header.title
     snapshot.game_code = rom.header.game_code
     world = compile_world(
-        snapshot, rom, flat=args.flat, auto_flat=args.auto_flat
+        snapshot, rom, flat=args.flat, auto_flat=not args.no_auto_flat
     )
     out = world.export(args.out)
     if world.mode == "flat":
@@ -34,7 +34,7 @@ def _capture(args: argparse.Namespace) -> int:
     print(json.dumps(world.summary()["map"], indent=1))
     print(
         f"family={world.family.value} mode={world.mode} "
-        f"ui={world.ui_coverage:.2f} objects={len(world.objects)} "
+        f"ui={world.ui_coverage:.2f} cover={world.map_coverage:.2f} objects={len(world.objects)} "
         f"sprites={len(world.sprites)} -> {out}"
     )
     return 0
@@ -89,8 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="treat the frame as a screen (battle/menu): one card, no 3D lifting",
     )
     capture.add_argument(
-        "--auto-flat", action="store_true",
-        help="pick flat mode when BG0 covers the screen (battle/menu guess)",
+        "--no-auto-flat", action="store_true",
+        help="never switch to flat mode; always lift the frame",
     )
     capture.add_argument("--screenshot", default="")
     capture.set_defaults(func=_capture)

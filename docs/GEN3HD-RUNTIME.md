@@ -130,11 +130,17 @@ godot --path viewer3d -- --world="$PWD/out/screen" --shot=/tmp/screen.png
 The card sits on the same rim, soil and underside as a terrain world, and
 `world.json` records `"mode": "flat"` so nothing tries to re-lift it.
 
-`--auto-flat` guesses the mode from BG0 coverage (a battle, menu or dialogue
-draws its boxes there) and `world.json` records that number as `ui_coverage`.
-It is a guess, not a rule: some overworld maps leave a BG0 layer enabled too,
-so flat stays manual by default and the capture prints `mode=`/`ui=` every
-time.
+Flat mode is chosen automatically and the capture prints the evidence:
+
+- `ui=` is BG0 coverage. A battle, menu or dialogue draws its boxes there; a
+  field map leaves BG0 empty.
+- `cover=` is how much of the map the metatile composite fills. A room or
+  battle screen whose floor is a plain tilemap composites mostly empty, which
+  is the signal for interiors.
+
+Either signal switches the frame to flat. `--no-auto-flat` always lifts, and
+`--flat` forces a card. Both numbers are recorded in `world.json`
+(`ui_coverage`, `map_coverage`) so a wrong decision is explainable.
 
 ### Live link
 

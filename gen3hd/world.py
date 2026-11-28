@@ -113,6 +113,8 @@ class WorldModel:
     # BG0 coverage: how much of the screen a UI layer draws.  Reported so a
     # caller can see why auto-flat did or did not fire.
     ui_coverage: float = 0.0
+    # Fraction of the map area the metatile composite actually covers.
+    map_coverage: float = 1.0
 
     @property
     def pixel_width(self) -> int:
@@ -127,6 +129,7 @@ class WorldModel:
             "format": "gen3hd-world-v1",
             "mode": self.mode,
             "ui_coverage": round(self.ui_coverage, 3),
+            "map_coverage": round(self.map_coverage, 3),
             "rom": {
                 "title": self.header,
                 "family": self.family.value,
@@ -999,7 +1002,7 @@ def compile_world(
     state: GbaSnapshot,
     rom: Gen3Rom,
     flat: bool = False,
-    auto_flat: bool = False,
+    auto_flat: bool = True,
 ) -> WorldModel:
     located: LocatedMap = locate_map(state.iwram, state.ewram, rom)
     layout = located.layout
@@ -1010,10 +1013,12 @@ def compile_world(
     composed["elevation"] = sanitize_elevation(
         composed["elevation"], composed["collision"]
     )
+    # A metatile map covers its area; a battle, menu or interior whose floor is
+    # a plain tilemap composites as mostly empty.  That is a reliable "this is
+    # a screen" signal even when BG0 says nothing.
+    map_coverage = float((composite[..., 3] > 0).mean())
     if not flat and auto_flat:
-        # BG0 coverage alone is not decisive: some overworld maps leave a
-        # layer enabled too.  Opt-in, so a wrong guess never surprises a run.
-        flat = ui_coverage > 0.05
+        flat = ui_coverage > 0.05 or map_coverage < 0.60
     if flat:
         # A battle, menu or dialogue frame is a screen, not a place: lifting
         # its tiles produces floating slabs and UI boxes.  Keep the composite
@@ -1063,4 +1068,5 @@ def compile_world(
         header=rom.header.title,
         mode="flat" if flat else "terrain",
         ui_coverage=ui_coverage,
+        map_coverage=map_coverage,
     )
