@@ -20,7 +20,7 @@
   "shadows": {
     "cast": true,
     "contact": true,
-    "baked": true,
+    "baked": false,
     "strength": -1.0
   },
   "island": {

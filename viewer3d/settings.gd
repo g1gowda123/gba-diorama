@@ -35,7 +35,7 @@ const DEFAULTS := {
 	"shadows": {
 		"cast": true,      # real-time directional shadow map
 		"contact": true,   # soft quads under cards and sprites
-		"baked": true,     # pre-baked ground shadow overlay
+		"baked": false,     # pre-baked ground shadow overlay
 		"strength": -1.0,  # <0 keeps the time preset's value
 	},
 	"island": {

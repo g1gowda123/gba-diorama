@@ -63,7 +63,7 @@ var settings_path := ""
 var settings: Dictionary = {}
 # Fine-grained switches, all defaulting from settings.json.
 var contact_shadows := true
-var baked_shadows := true
+var baked_shadows := false
 var vignette_enabled := false
 var fringe_enabled := true
 var vines_enabled := true
@@ -1045,9 +1045,12 @@ func _build_objects() -> void:
 				if h > 2.0:
 					scale *= 2.0 / h
 				card_pos.y += (scale - 1.0) * h * 0.5
-			if kind == "tree" and not _is_foliage(texture):
-				# A "tree" with no green is a block of masonry or a wall slice;
-				# standing it up is what produced the striped columns.
+			# A wide, shallow cutout is a wall top or a ground band, not a
+			# standing prop: lifted, it hovers over the sand as a pale card.
+			var wall_slice := kind != "building" and w >= 2.0 and h <= 1.5
+			if kind != "building" and not wall_slice and _is_flat_art(texture):
+				wall_slice = true
+			if (kind == "tree" and not _is_foliage(texture)) or wall_slice:
 				_add_ground_decal(texture, w, h, cx, base_y, cz)
 			else:
 				_add_billboard(texture, w, h, card_pos, tint, kind == "tree" or kind == "decor", flip, scale)
@@ -1501,6 +1504,35 @@ func _is_foliage(texture: Texture2D) -> bool:
 	if solid == 0:
 		return false
 	return float(green) / float(solid) >= 0.10
+
+
+func _is_flat_art(texture: Texture2D) -> bool:
+	# Packaging art often leaves pale, near-uniform slices of wall top behind.
+	# Lifted, they are shadowless cards hanging over the sand, so they belong on
+	# the ground with the rest of the wall.
+	var image := texture.get_image()
+	if image == null:
+		return false
+	image.convert(Image.FORMAT_RGBA8)
+	var total := 0.0
+	var total_sq := 0.0
+	var count := 0
+	var step_x: int = maxi(1, image.get_width() / 8)
+	var step_y: int = maxi(1, image.get_height() / 8)
+	for y in range(0, image.get_height(), step_y):
+		for x in range(0, image.get_width(), step_x):
+			var c := image.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			var l := 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+			total += l
+			total_sq += l * l
+			count += 1
+	if count < 8:
+		return false
+	var mean := total / float(count)
+	var variance: float = maxf(total_sq / float(count) - mean * mean, 0.0)
+	return mean > 0.50 and sqrt(variance) < 0.10
 
 
 func _add_soft_shadow(base: Vector3, w: float, h: float, kind: String) -> MeshInstance3D:
