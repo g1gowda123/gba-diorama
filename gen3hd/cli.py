@@ -261,7 +261,10 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--interval", type=float, default=0.1, help="seconds between updates")
     live.add_argument("--frames", type=int, default=6, help="emulator frames per update")
     live.add_argument("--seconds", type=float, default=0.0, help="0 = run until interrupted")
-    live.add_argument("--walk", default="", help="hold this direction (up/down/left/right)")
+    live.add_argument(
+        "--walk", default="", choices=["", "up", "down", "left", "right"],
+        help="hold this direction (up/down/left/right)",
+    )
     live.add_argument(
         "--check-every", type=int, default=10,
         help="ticks between map-identity reads (default 10)",
@@ -292,7 +295,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--time", default="day",
         help="grade for play: day (faithful, default), golden, dusk or night",
     )
-    play.add_argument("--walk", default="", help="hold a direction (testing/demos)")
+    play.add_argument(
+        "--walk", default="", choices=["", "up", "down", "left", "right"],
+        help="hold a direction (testing/demos)",
+    )
     play.set_defaults(func=_play)
 
     return parser
