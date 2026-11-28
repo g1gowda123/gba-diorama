@@ -2435,8 +2435,11 @@ func _follow_live_player(frame: Dictionary) -> void:
 	if record.is_empty():
 		return
 	var node: MeshInstance3D = record["node"]
-	var fx := clampf(node.position.x, 5.5, float(map_w) - 5.5)
-	var fz := clampf(node.position.z, 5.0, float(map_h) - 5.0)
+	# Focus on the player, not on a point pushed away from the map border: the
+	# camera is allowed to sit outside the island, the player is not allowed to
+	# end up off-centre.
+	var fx := clampf(node.position.x, 0.5, float(map_w) - 0.5)
+	var fz := clampf(node.position.z, 0.5, float(map_h) - 0.5)
 	var fy := _cell_height(int(floor(fx)), int(floor(fz)))
 	var focus := Vector3(fx, fy + 0.35, fz)
 	# Fade any building between the camera and the player: the camera sits
@@ -2454,11 +2457,15 @@ func _follow_live_player(frame: Dictionary) -> void:
 	var yaw: float = play_cam["yaw"]
 	var pitch: float = play_cam["pitch"]
 	var distance: float = play_cam["distance"]
-	camera_node.position = focus + Vector3(
+	var eye := focus + Vector3(
 		sin(yaw) * cos(pitch),
 		sin(pitch),
 		cos(yaw) * cos(pitch)
 	) * distance
+	# The eye may hang over the void; only the framing of the player matters.
+	eye.x = clampf(eye.x, -8.0, float(map_w) + 8.0)
+	eye.z = clampf(eye.z, -8.0, float(map_h) + 8.0)
+	camera_node.position = eye
 	camera_node.look_at(focus + Vector3(0.0, 0.55, 0.0), Vector3.UP)
 
 
