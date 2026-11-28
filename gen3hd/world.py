@@ -695,6 +695,18 @@ def refine_object_alpha(objects: list[WorldObject], ground: np.ndarray) -> None:
             continue
         y0, x0 = visible.min(axis=0)
         _, x1 = visible.max(axis=0) + 1
+        # A crop narrower than half a tile is a fragment of the tile it came
+        # from (a few pixels of trunk or fence post).  Stretched onto a card it
+        # reads as a stripe, so keep at least half a tile of the original art,
+        # growing around the visible pixels and staying inside the card.
+        min_px = 8
+        if x1 - x0 < min_px:
+            grow = (min_px - (x1 - x0) + 1) // 2
+            x0 = max(0, int(x0) - grow)
+            x1 = min(width, x0 + min_px)
+            x0 = max(0, x1 - min_px)
+        if height - y0 < min_px:
+            y0 = max(0, height - min_px)
         # Keep the full bottom edge: the card must stay anchored at the
         # footprint's front edge, even if the lowest pixels are shadow.
         if (x0, y0, x1, height) != (0, 0, width, height):
